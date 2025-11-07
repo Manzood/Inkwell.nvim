@@ -25,3 +25,8 @@ end
 
 -- local context = get_buffer()
 -- print("Context: ", context)
+
+-- WORK IN PROGRESS
+local prepare_query = function()
+
+end

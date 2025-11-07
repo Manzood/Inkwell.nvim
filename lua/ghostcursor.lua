@@ -2,6 +2,8 @@
 
 -- require("query")
 
+require("events")
+
 local M = {}
 
 M.setup = function()
