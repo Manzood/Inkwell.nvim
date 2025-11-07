@@ -5,6 +5,11 @@ local display_diff = require("display-diff")
 local project_markers = { ".git", "package.json", "pyproject.toml", ".editorconfig", ".project_root", ".env" }
 local project_root = vim.fs.root(0, project_markers)
 local logger = require("logger")
+
+local plugin_root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:match("@(.*)"), ":h:h")
+package.path = package.path .. ";" .. plugin_root .. "/tools/?.lua"
+local log_viewer = require("log-viewer.init")
+
 env.load_env(project_root .. "/.env")
 
 Last_Request_Id = 0
