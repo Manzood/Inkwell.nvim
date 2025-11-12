@@ -87,9 +87,118 @@ local function pretty_json(obj, indent)
     end
 end
 
+-- Check if a path is expanded (needed by render_json_value)
+local function is_path_expanded(expanded_state, entry_idx, path)
+    if not expanded_state[entry_idx] then
+        return false
+    end
+    return expanded_state[entry_idx][path] or false
+end
+
+-- Render a JSON value recursively with expand/collapse support
+local function render_json_value(value, base_path, indent_level, expanded_state, entry_idx)
+    indent_level = indent_level or 0
+    local indent_str = string.rep("  ", indent_level)
+    local lines = {}
+    
+    if type(value) == "table" then
+        -- Check if it's an array
+        local is_array = false
+        local max_key = 0
+        local count = 0
+        for k, _ in pairs(value) do
+            count = count + 1
+            if type(k) == "number" then
+                is_array = true
+                max_key = math.max(max_key, k)
+            else
+                is_array = false
+                break
+            end
+        end
+        
+        if is_array and max_key == count then
+            -- Array
+            local path = base_path .. "[]"
+            local is_expanded = is_path_expanded(expanded_state, entry_idx, path)
+            local prefix = is_expanded and "▼" or "▶"
+            table.insert(lines, indent_str .. prefix .. " [")
+            
+            if is_expanded then
+                for i, v in ipairs(value) do
+                    local item_path = base_path .. "[" .. (i - 1) .. "]"
+                    local item_lines = render_json_value(v, item_path, indent_level + 1, expanded_state, entry_idx)
+                    for _, line in ipairs(item_lines) do
+                        table.insert(lines, line)
+                    end
+                    if i < #value then
+                        table.insert(lines, indent_str .. "  ,")
+                    end
+                end
+                table.insert(lines, indent_str .. " ]")
+            else
+                table.insert(lines, indent_str .. "  ... (" .. #value .. " items)")
+            end
+        else
+            -- Object
+            local path = base_path .. "{}"
+            local is_expanded = is_path_expanded(expanded_state, entry_idx, path)
+            local prefix = is_expanded and "▼" or "▶"
+            table.insert(lines, indent_str .. prefix .. " {")
+            
+            if is_expanded then
+                local keys = {}
+                for k, _ in pairs(value) do
+                    table.insert(keys, k)
+                end
+                table.sort(keys, function(a, b)
+                    if type(a) == "number" and type(b) == "number" then
+                        return a < b
+                    end
+                    return tostring(a) < tostring(b)
+                end)
+                
+                for i, k in ipairs(keys) do
+                    local v = value[k]
+                    local key_str = type(k) == "string" and ('"' .. k .. '"') or tostring(k)
+                    local item_path = base_path .. "." .. tostring(k)
+                    local item_lines = render_json_value(v, item_path, indent_level + 1, expanded_state, entry_idx)
+                    
+                    -- First line goes on same line as key, rest are indented
+                    if #item_lines > 0 then
+                        table.insert(lines, indent_str .. "  " .. key_str .. ": " .. item_lines[1])
+                        for j = 2, #item_lines do
+                            table.insert(lines, item_lines[j])
+                        end
+                    end
+                    if i < #keys then
+                        table.insert(lines, indent_str .. "  ,")
+                    end
+                end
+                table.insert(lines, indent_str .. " }")
+            else
+                local key_count = 0
+                for _ in pairs(value) do
+                    key_count = key_count + 1
+                end
+                table.insert(lines, indent_str .. "  ... (" .. key_count .. " keys)")
+            end
+        end
+    elseif type(value) == "string" then
+        -- Escape quotes and newlines
+        local escaped = value:gsub('\\', '\\\\'):gsub('"', '\\"'):gsub('\n', '\\n')
+        table.insert(lines, '"' .. escaped .. '"')
+    else
+        table.insert(lines, tostring(value))
+    end
+    
+    return lines
+end
+
 -- Format a log entry for display
-local function format_entry(entry, index, expanded)
-    expanded = expanded or {}
+local function format_entry(entry, index, expanded_state)
+    expanded_state = expanded_state or {}
+    local entry_expanded = expanded_state[index] or {}
     local lines = {}
     
     -- Header line
@@ -129,28 +238,35 @@ local function format_entry(entry, index, expanded)
     
     for _, field in ipairs(collapsible_fields) do
         if entry[field.key] ~= nil then
-            local is_expanded = expanded[field.key] or false
+            local is_expanded = entry_expanded[field.key] or false
             local prefix = is_expanded and "▼" or "▶"
             table.insert(lines, "  ├─ " .. prefix .. " " .. field.label .. ":")
             
             if is_expanded then
                 local value = entry[field.key]
-                local formatted
+                local parsed_value = value
+                
+                -- Try to parse as JSON if it's a string
                 if type(value) == "string" then
-                    -- Try to parse as JSON first
                     local ok, parsed = pcall(vim.json.decode, value)
                     if ok then
-                        formatted = pretty_json(parsed, 0)
-                    else
-                        formatted = value
+                        parsed_value = parsed
                     end
-                else
-                    formatted = pretty_json(value, 0)
                 end
                 
-                -- Indent the expanded content
-                for line in formatted:gmatch("[^\n]+") do
-                    table.insert(lines, "  │  " .. line)
+                -- Use recursive renderer for nested structures
+                if type(parsed_value) == "table" then
+                    local base_path = field.key
+                    local json_lines = render_json_value(parsed_value, base_path, 0, expanded_state, index)
+                    for _, line in ipairs(json_lines) do
+                        table.insert(lines, "  │  " .. line)
+                    end
+                else
+                    -- Simple value - just display it
+                    local formatted = type(value) == "string" and value or tostring(value)
+                    for line in formatted:gmatch("[^\n]+") do
+                        table.insert(lines, "  │  " .. line)
+                    end
                 end
             else
                 -- Show preview (but don't truncate - let it wrap)
@@ -201,8 +317,7 @@ local function render_buffer(bufnr, entries, expanded_state)
         -- Render entries (newest first)
         for i = #entries, 1, -1 do
             local entry = entries[i]
-            local entry_expanded = expanded_state[i] or {}
-            local entry_lines = format_entry(entry, i, entry_expanded)
+            local entry_lines = format_entry(entry, i, expanded_state)
             for _, line in ipairs(entry_lines) do
                 table.insert(lines, line)
             end
@@ -212,13 +327,14 @@ local function render_buffer(bufnr, entries, expanded_state)
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
 end
 
--- Toggle expansion of a field
-local function toggle_field(entries, expanded_state, entry_idx, field_key)
+-- Toggle expansion of a field (supports nested paths like "query_payload.messages[0]")
+local function toggle_field(entries, expanded_state, entry_idx, field_path)
     if not expanded_state[entry_idx] then
         expanded_state[entry_idx] = {}
     end
-    expanded_state[entry_idx][field_key] = not (expanded_state[entry_idx][field_key] or false)
+    expanded_state[entry_idx][field_path] = not (expanded_state[entry_idx][field_path] or false)
 end
+
 
 -- Find which entry and field the cursor is on
 local function get_cursor_location(bufnr, entries, expanded_state)
@@ -234,34 +350,146 @@ local function get_cursor_location(bufnr, entries, expanded_state)
     local buffer_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     local current_line_content = buffer_lines[line_num + 1] or ""
     
-    -- Check if we're on a collapsible field line
-    -- The line should look like: "  ├─ ▶ query_payload:" or "  ├─ ▼ query_payload:"
-    -- Use a more direct approach that doesn't rely on Unicode character classes
-    local field_key = nil
+    -- Check if we're on a collapsible line (top-level field or nested structure)
+    -- Top-level: "  ├─ ▶ query_payload:" or "  ├─ ▼ query_payload:"
+    -- Nested: "  │    ▶ [" or "  │    ▶ {" or "  │      ▶ [0]"
+    local field_path = nil
     
-    -- First check if line has the structure: spaces + ├─ + symbol + space + field_name + :
-    if current_line_content:match("├─") and current_line_content:match(":") then
+    -- Check for top-level field (starts with "  ├─")
+    if current_line_content:match("^%s+├─") and current_line_content:match(":") then
         -- Extract the field name: everything after ├─ symbol space and before :
-        -- Pattern: ├─ followed by optional spaces, then a symbol (any char), then space, then field name, then :
         local match = current_line_content:match("├─%s*[^%s]%s+([^:]+):")
         if match then
-            field_key = match:gsub("^%s+", ""):gsub("%s+$", "")
+            field_path = match:gsub("^%s+", ""):gsub("%s+$", "")
         end
         
         -- Alternative: match everything between ├─ and :, then extract last word
-        if not field_key then
+        if not field_path then
             local before_colon = current_line_content:match("├─%s*([^:]+):")
             if before_colon then
-                -- Extract field name (everything after the last space)
                 local field_match = before_colon:match("%s+([^%s]+)%s*$")
                 if field_match then
-                    field_key = field_match
+                    field_path = field_match
+                end
+            end
+        end
+    -- Check for nested structure (starts with "  │" and has ▶, ▼, or ►)
+    -- Pattern: "  │    ▶ {" or "  │    ▼ {" or "  │    ▶ [" or "  │    ►{" etc.
+    elseif current_line_content:match("│") and current_line_content:match("[▶▼►]") then
+        -- Reconstruct the full nested path by scanning upward and building path components
+        local base_field = nil
+        
+        -- Find the base field first - use the simplest possible approach
+        for i = line_num, header_lines, -1 do
+            local line = buffer_lines[i + 1] or ""
+            -- Look for the field header line (has ├─ and :)
+            if line:match("├─") and line:match(":") then
+                -- Direct string search - most reliable
+                if string.find(line, "query_payload", 1, true) then
+                    base_field = "query_payload"
+                    break
+                elseif string.find(line, "response", 1, true) then
+                    base_field = "response"
+                    break
+                elseif string.find(line, "context_lines", 1, true) then
+                    base_field = "context_lines"
+                    break
+                end
+            end
+        end
+        
+        if base_field then
+            -- Build path components by scanning upward
+            local path_components = {base_field}
+            local current_indent = #current_line_content:match("^%s*")
+            
+            -- Scan upward to find parent structures
+            for i = line_num - 1, header_lines, -1 do
+                local line = buffer_lines[i + 1] or ""
+                if line:match("^%s+├─") then
+                    break  -- Reached base field
+                end
+                
+                local line_indent = #line:match("^%s*")
+                
+                -- Only process lines that are less indented (parent structures)
+                if line_indent < current_indent and line:match("[▶▼►]") then
+                    -- Check for object key (format: "  │    "key": ▶" or "  │      "key": value")
+                    -- Try pattern with expand/collapse symbol first (handle ▶, ▼, and ►)
+                    local key_match = line:match('"%([^"]+)"%s*:%s*[▶▼►]')
+                    -- If not found, try pattern without symbol (might be on next line)
+                    if not key_match then
+                        key_match = line:match('"%([^"]+)"%s*:')
+                    end
+                    if key_match then
+                        table.insert(path_components, 1, "." .. key_match)
+                        current_indent = line_indent
+                    -- Check for array marker (handle ▶, ▼, and ►)
+                    elseif line:match("[▶▼►]%s*%[") or line:match("[▶▼►]%[") then
+                        -- Count array items to get index
+                        local item_count = 0
+                        for j = i + 1, line_num do
+                            local check_line = buffer_lines[j + 1] or ""
+                            local check_indent = #check_line:match("^%s*")
+                            -- Count non-collapsed items at the array's indent level
+                            if check_indent == line_indent + 2 and not (check_line:match("[▶▼►]") or check_line:match(",") or check_line:match("%]")) then
+                                item_count = item_count + 1
+                            elseif check_line:match("%]") then
+                                break
+                            end
+                        end
+                        table.insert(path_components, 1, "[" .. item_count .. "]")
+                        current_indent = line_indent
+                    -- Check for object marker (handle ▶, ▼, and ►)
+                    elseif line:match("[▶▼►]%s*%{") or line:match("[▶▼►]%{") then
+                        table.insert(path_components, 1, "{}")
+                        current_indent = line_indent
+                    end
+                end
+            end
+            
+            -- Build the path string
+            local path_str = table.concat(path_components)
+            
+            -- Add the current structure marker (handle ▶, ▼, and ► with or without space)
+            -- Since we're on a line with │ and triangle, it's definitely a nested structure
+            -- Default to {} if we can't determine the exact type
+            if current_line_content:match("[▶▼►]%s*%[") or current_line_content:match("[▶▼►]%[") then
+                field_path = path_str .. "[]"
+            elseif current_line_content:match("[▶▼►]%s*%{") or current_line_content:match("[▶▼►]%{") then
+                field_path = path_str .. "{}"
+            else
+                -- Default: assume it's an object (most common case)
+                field_path = path_str .. "{}"
+            end
+        end
+    end
+    
+    -- CRITICAL FALLBACK: If field_path is still nil, use the simplest possible approach
+    if not field_path then
+        -- Scan upward and use direct string search
+        for i = line_num, header_lines, -1 do
+            local line = buffer_lines[i + 1] or ""
+            if line:match("├─") and line:match(":") then
+                -- Debug: log the actual line content
+                -- Use string.find with plain text search (no patterns)
+                -- Also try case-insensitive and partial matches
+                local line_lower = string.lower(line)
+                if string.find(line_lower, "query_payload", 1, true) or string.find(line, "query_payload", 1, true) then
+                    field_path = "query_payload{}"
+                    break
+                elseif string.find(line_lower, "response", 1, true) or string.find(line, "response", 1, true) then
+                    field_path = "response{}"
+                    break
+                elseif string.find(line_lower, "context_lines", 1, true) or string.find(line, "context_lines", 1, true) then
+                    field_path = "context_lines{}"
+                    break
                 end
             end
         end
     end
     
-    if not field_key then
+    if not field_path then
         return nil, nil
     end
     
@@ -304,16 +532,34 @@ local function get_cursor_location(bufnr, entries, expanded_state)
         end
     end
     
+    -- If we didn't find entry_idx, try a simpler approach: count entries from top
+    if not entry_idx then
+        local entry_count = 0
+        for i = header_lines, line_num do
+            if buffer_lines[i + 1]:match("^▶ %[") then
+                entry_count = entry_count + 1
+            end
+        end
+        if entry_count > 0 then
+            entry_idx = #entries - entry_count + 1
+        end
+    end
+    
     if entry_idx then
-        -- Map label to key
+        -- Validate that the path starts with a valid base field
         local key_map = {
             query_payload = "query_payload",
             response = "response",
             context_lines = "context_lines",
         }
-        local mapped_key = key_map[field_key]
-        if mapped_key then
-            return entry_idx, mapped_key
+        
+        -- Extract base field (everything before first . or [)
+        local base_field = field_path:match("^([^%.%[]+)")
+        
+        -- Check if base field is valid
+        if key_map[base_field] then
+            -- Path is valid - return it (supports any depth of nesting)
+            return entry_idx, field_path
         end
     end
     
@@ -407,16 +653,42 @@ function M.open()
             local new_line = math.min(current_line, total_lines - 1)
             vim.api.nvim_win_set_cursor(0, { new_line + 1, 0 })
         else
+            -- Debug: show what we detected
+            local has_pipe = current_line_content:match("│") and "yes" or "no"
+            local has_triangle_debug = current_line_content:match("[▶▼►]") and "yes" or "no"
+            local triangle_char = current_line_content:match("[▶▼►]") or "none"
+            local has_brace = (current_line_content:match("%{") or current_line_content:match("%[")) and "yes" or "no"
+            
             -- Check if user is on entry header (can't expand that)
             if current_line_content:match("^▶ %[") then
                 vim.notify("Navigate down to a field line (like '  ├─ ▶ query_payload:') to expand/collapse", vim.log.levels.INFO)
-            elseif current_line_content:match("├─") then
-                -- We're on a line with ├─ but pattern didn't match - show debug info
-                vim.notify(string.format("Debug - Line: '%s' | Has ├─ but pattern failed. Trying to extract field...", 
-                    current_line_content:sub(1, 60)), 
-                    vim.log.levels.WARN)
             else
-                vim.notify("Cannot expand - not on a collapsible field line", vim.log.levels.INFO)
+                -- Additional debug: show what we found when scanning upward
+                local found_base_field = nil
+                local current_line_debug = vim.api.nvim_win_get_cursor(0)[1] - 1
+                for i = current_line_debug, 12, -1 do
+                    local line = vim.api.nvim_buf_get_lines(bufnr, i, i + 1, false)[1] or ""
+                    if line:match("├─") and line:match(":") then
+                        found_base_field = line:sub(1, 60)
+                        break
+                    end
+                end
+                
+                -- Also check what base_field was set to in get_cursor_location
+                local entry_idx_debug, field_path_debug = get_cursor_location(bufnr, entries, expanded_state)
+                
+                vim.notify(string.format("Debug - Line: '%s' | │:%s | Triangle:%s (%s) | Brace/Bracket:%s | Entry:%s | Path:%s | Base field line: %s | After get_cursor_location: Entry:%s Path:%s", 
+                    current_line_content:sub(1, 50),
+                    has_pipe,
+                    has_triangle_debug,
+                    triangle_char,
+                    has_brace,
+                    tostring(entry_idx) or "nil",
+                    tostring(field_path) or "nil",
+                    found_base_field or "not found",
+                    tostring(entry_idx_debug) or "nil",
+                    tostring(field_path_debug) or "nil"), 
+                    vim.log.levels.WARN)
             end
         end
     end

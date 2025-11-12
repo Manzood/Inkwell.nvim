@@ -5,6 +5,7 @@ local display_diff = require("display-diff")
 local project_markers = { ".git", "package.json", "pyproject.toml", ".editorconfig", ".project_root", ".env" }
 local project_root = vim.fs.root(0, project_markers)
 local logger = require("logger")
+require("query-data")
 
 local plugin_root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:match("@(.*)"), ":h:h")
 package.path = package.path .. ";" .. plugin_root .. "/tools/?.lua"
@@ -12,14 +13,23 @@ local log_viewer = require("log-viewer.init")
 
 env.load_env(project_root .. "/.env")
 
-Last_Request_Id = 0
-Last_response = {}
 -- TODO read the URL from a config file
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 OLLAMA_GENERATE_URL = "http://localhost:11434/api/generate"
 OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
-PHI3 = "phi3"
-GPTOSS20B = "openai/gpt-oss-20b"
+
+-- create enum for models
+local MODELS = {
+    PHI3 = "phi3",
+    GPTOSS20B = "openai/gpt-oss-20b",
+}
+
+local PROVIDERS = {
+    GROQ = "groq",
+    AWS = "aws",
+    OLLAMA = "ollama",
+}
+
 
 local API_AGENT_PROMPT = [[
 You are a precise code-completion agent.
@@ -51,9 +61,15 @@ Output (JSON):
 
 Notes:
 - Please do *NOT* include any "```json```" type formatting. Just output it as Json, and it will be parsed correctly.
+- Please do not ignore the whitespace in the current line when you output it.
 ]]
 
-NO_CHANGE_STRING = "\42"
+NO_CHANGE_STRING = "\\42"
+
+local GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+-- TODO add check to see if the API key didn't make it
+
+Current_Request_Id = 0
 
 function Create_Query(model, content)
     local filetype = vim.bo.filetype
@@ -79,24 +95,23 @@ function Create_Query(model, content)
     return vim.fn.json_encode(payload)
 end
 
-Parse_Response = function(response)
+Parse_Response = function(response, provider)
     -- add check to see if it was decoded successfully
     local decoded, err = vim.json.decode(response)
     if err then
         print("Error decoding response: " .. err)
         return
     end
-    -- print(decoded.choices[1].message.content)
-    -- print(decoded.message.content)
-    return decoded.choices[1].message.content
-    -- return decoded.message.content
+    if provider == PROVIDERS.GROQ then
+        return decoded.choices[1].message.content
+    elseif provider == PROVIDERS.OLLAMA then
+        return decoded.message.content
+    end
 end
 
-local GROQ_API_KEY = os.getenv("GROQ_API_KEY")
--- TODO add check to see if the API key didn't make it
-
 function Query_via_cmd_line(url, query, api_key)
-    local request_id = Last_Request_Id
+    local request_id = (Previous_Query_Data.request_id or 0) + 1
+    Previous_Query_Data.request_id = request_id
     local command = { "curl", "-s",
         "-X", "POST", url,
         "-H", "Content-Type: application/json",
@@ -113,7 +128,7 @@ function Query_via_cmd_line(url, query, api_key)
         { text = true },
         function(result)
             -- Ignore if buffer changed since this request started
-            if request_id ~= Last_Request_Id then
+            if request_id ~= Previous_Query_Data.request_id then
                 print("Ignoring stale response.")
                 return
             end
@@ -127,10 +142,15 @@ function Query_via_cmd_line(url, query, api_key)
             })
 
             -- print("Done")
-            Last_response = result.stdout
-            local suggested_change = vim.json.decode(Parse_Response(result.stdout))
-            if suggested_change and suggested_change == NO_CHANGE_STRING then return end
+            Previous_Query_Data.response = result.stdout
+            -- print(result.stdout)
+            local suggested_change = vim.json.decode(Parse_Response(result.stdout, PROVIDERS.GROQ))
+            if suggested_change and suggested_change.new_line == NO_CHANGE_STRING then return end
+
             if suggested_change then
+                Previous_Query_Data.suggested_line = suggested_change.new_line
+                Previous_Query_Data.last_request_id = request_id
+                Previous_Query_Data.line_number = cursor_line
                 vim.schedule(function()
                     display_diff.display_diff(cursor_line, suggested_change.new_line)
                 end)
@@ -174,7 +194,7 @@ local function query_local_model(url, model, query)
             -- print(result.stdout)
 
             Last_response = result.stdout
-            local suggested_change = Parse_Response(result.stdout)
+            local suggested_change = Parse_Response(result.stdout, PROVIDERS.OLLAMA)
             -- print(suggested_change)
             if suggested_change and suggested_change == NO_CHANGE_STRING then return end
             if suggested_change then
@@ -189,11 +209,11 @@ local function query_local_model(url, model, query)
 end
 
 function Query_Groq(content)
-    Query_via_cmd_line(GROQ_URL, Create_Query(GPTOSS20B, content), GROQ_API_KEY)
+    Query_via_cmd_line(GROQ_URL, Create_Query(MODELS.GPTOSS20B, content), GROQ_API_KEY)
 end
 
 function Query_Phi3(content)
-    query_local_model(OLLAMA_CHAT_URL, "phi3", Create_Query(PHI3, content))
+    query_local_model(OLLAMA_CHAT_URL, MODELS.PHI3, Create_Query(MODELS.PHI3, content))
 end
 
 -- local function old_query_groq(prompt)

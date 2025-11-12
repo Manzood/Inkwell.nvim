@@ -158,7 +158,7 @@ local function highlight_exists(group)
     if hl.link then
         return true
     end
-    return next(hl) ~= nil
+    return next(hl) ~= nil -- TODO why is this necessary?
 end
 
 local function ensure_highlights()
@@ -573,7 +573,9 @@ function M.display_diff(line, updated_line, opts)
         return
     end
 
-    M.clear({ bufnr = bufnr, line = line })
+    -- M.clear({ bufnr = bufnr, line = line })
+    -- clear *all* visible diffs
+    M.clear({ bufnr = bufnr })
 
     local new_line = updated_line or ""
     local ops = compute_inline_diff(current, new_line)

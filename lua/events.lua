@@ -3,15 +3,6 @@ require("query")
 local api = vim.api
 local timer = vim.loop.new_timer()
 
-local current_request = nil
-
-local function cancel_current_request()
-    if current_request and not current_request:is_closing() then
-        current_request:kill("sigterm") -- TODO or ignore it
-        current_request = nil
-    end
-end
-
 local function debounce(fn, ms)
     return function(...)
         local args = { ... }
@@ -23,15 +14,13 @@ local function debounce(fn, ms)
     end
 end
 
-
 local cnt = 0
-Send_query = debounce(function(bufnr)
+Send_Query = debounce(function(bufnr)
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     local content = table.concat(lines, "\n")
     -- send to API here
     cnt = cnt + 1
-    Last_Request_Id = Last_Request_Id + 1
-    cancel_current_request()
+    Current_Request_Id = Current_Request_Id + 1
     -- Query_via_cmd_line(GROQ_URL, content)
     local job_id = Query_Groq(content)
     -- local job_id = Query_Phi3(content)
@@ -46,12 +35,14 @@ local group = api.nvim_create_augroup("GhostCursor", { clear = true })
 api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
     group = group,
     callback = function(args)
+        -- Send_Query(vim.api.nvim_get_current_buf())
         -- You can now cancel pending API queries or debounce new ones here
         -- send current code to AI
         -- get suggestion back
         -- display the suggestion
         -- has to be async
         -- send_query(args.buf)
+        Send_Query(args.buf)
     end,
 })
 
@@ -82,5 +73,5 @@ api.nvim_create_autocmd("InsertLeave", {
 }) ]]
 
 -- create keybind to send query
-api.nvim_set_keymap("n", "<leader>sq", ":lua Send_query(vim.api.nvim_get_current_buf())<CR>",
+api.nvim_set_keymap("n", "<leader>sq", ":lua Send_Query(vim.api.nvim_get_current_buf())<CR>",
     { noremap = true, silent = true })
