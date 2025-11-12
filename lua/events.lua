@@ -1,4 +1,5 @@
 require("query")
+require("apply-change")
 
 local api = vim.api
 local timer = vim.loop.new_timer()
@@ -14,18 +15,17 @@ local function debounce(fn, ms)
     end
 end
 
-local cnt = 0
 Send_Query = debounce(function(bufnr)
+    if Suggestion_Just_Accepted then
+        Suggestion_Just_Accepted = false
+        return
+    end
+
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     local content = table.concat(lines, "\n")
-    -- send to API here
-    cnt = cnt + 1
     Current_Request_Id = Current_Request_Id + 1
-    -- Query_via_cmd_line(GROQ_URL, content)
-    local job_id = Query_Groq(content)
-    -- local job_id = Query_Phi3(content)
-    -- Parse_response(Sample_response)
-    -- print("Query sent for buffer", bufnr, "with count", cnt)
+    -- local job_id = Query_Groq(content)
+    local job_id = Query_Phi3(content)
 end, 300)
 
 -- TODO maybe this will already be created elsewhere
@@ -72,6 +72,13 @@ api.nvim_create_autocmd("InsertLeave", {
     end,
 }) ]]
 
+-- tab completion keybind
+api.nvim_set_keymap("n", "<Tab>", ":lua Apply_Suggested_Change()<CR>",
+    { noremap = true, silent = true })
+
 -- create keybind to send query
 api.nvim_set_keymap("n", "<leader>sq", ":lua Send_Query(vim.api.nvim_get_current_buf())<CR>",
     { noremap = true, silent = true })
+
+-- api.nvim_set_keymap("n", "<leader>ac", ":lua Apply_Suggested_Change()<CR>",
+--     { noremap = true, silent = true })

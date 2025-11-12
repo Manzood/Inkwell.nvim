@@ -8,6 +8,11 @@ end
 --     M.display_diff(cursor_line, "Hello world")
 -- end, { noremap = true, silent = true, desc = "Ghostcursor: inline diff test" })
 
-return {
-    replace = replace,
-}
+function Apply_Suggested_Change()
+    print(vim.inspect(Previous_Query_Data))
+    print(Current_Request_Id)
+    if Current_Request_Id == Previous_Query_Data.request_id and Previous_Query_Data.valid_change then
+        replace(Previous_Query_Data.line_number, Previous_Query_Data.suggested_line)
+        Suggestion_Just_Accepted = true
+    end
+end

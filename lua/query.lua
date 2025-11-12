@@ -30,7 +30,6 @@ local PROVIDERS = {
     OLLAMA = "ollama",
 }
 
-
 local API_AGENT_PROMPT = [[
 You are a precise code-completion agent.
 You will be given a code snippet and the current line under the cursor.
@@ -45,7 +44,7 @@ Requirements:
   over whitespace or cosmetic formatting.
 - Keep indentation and naming consistent with the file.
 - The change suggested can be an partial change in a planned series of changes. It is okay to suggest such a change because it can help guide the user in that direction.
-- If there is no meaningful change or continuation, output the string "\42"
+- If there is no meaningful change or continuation, output the string "42" as the new line. Please do not output anything aside from that.
 - Never alter any other lines.
 
 Input:
@@ -64,7 +63,8 @@ Notes:
 - Please do not ignore the whitespace in the current line when you output it.
 ]]
 
-NO_CHANGE_STRING = "\\42"
+NO_CHANGE_STRING = "42"
+Suggestion_Just_Accepted = false
 
 local GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 -- TODO add check to see if the API key didn't make it
@@ -110,8 +110,7 @@ Parse_Response = function(response, provider)
 end
 
 function Query_via_cmd_line(url, query, api_key)
-    local request_id = (Previous_Query_Data.request_id or 0) + 1
-    Previous_Query_Data.request_id = request_id
+    local request_id = Current_Request_Id
     local command = { "curl", "-s",
         "-X", "POST", url,
         "-H", "Content-Type: application/json",
@@ -128,7 +127,7 @@ function Query_via_cmd_line(url, query, api_key)
         { text = true },
         function(result)
             -- Ignore if buffer changed since this request started
-            if request_id ~= Previous_Query_Data.request_id then
+            if request_id ~= Current_Request_Id then
                 print("Ignoring stale response.")
                 return
             end
@@ -141,16 +140,17 @@ function Query_via_cmd_line(url, query, api_key)
                 response = result.stdout,
             })
 
-            -- print("Done")
+            Previous_Query_Data.request_id = Current_Request_Id
             Previous_Query_Data.response = result.stdout
-            -- print(result.stdout)
             local suggested_change = vim.json.decode(Parse_Response(result.stdout, PROVIDERS.GROQ))
             if suggested_change and suggested_change.new_line == NO_CHANGE_STRING then return end
 
             if suggested_change then
                 Previous_Query_Data.suggested_line = suggested_change.new_line
-                Previous_Query_Data.last_request_id = request_id
+                Previous_Query_Data.request_id = request_id
                 Previous_Query_Data.line_number = cursor_line
+                Previous_Query_Data.used = false
+                Previous_Query_Data.valid_change = true
                 vim.schedule(function()
                     display_diff.display_diff(cursor_line, suggested_change.new_line)
                 end)
@@ -163,7 +163,7 @@ end
 
 -- TODO Consider streaming the output instead of having it show up in one big go
 local function query_local_model(url, model, query)
-    local request_id = Last_Request_Id
+    local request_id = Current_Request_Id
 
     -- TODO wrap creating the command in a single function
     local command = {
@@ -191,13 +191,17 @@ local function query_local_model(url, model, query)
                 response = result.stdout,
             })
 
-            -- print(result.stdout)
 
-            Last_response = result.stdout
-            local suggested_change = Parse_Response(result.stdout, PROVIDERS.OLLAMA)
-            -- print(suggested_change)
-            if suggested_change and suggested_change == NO_CHANGE_STRING then return end
+            Previous_Query_Data.response = result.stdout
+            print(vim.inspect(result.stdout))
+            local suggested_change = vim.json.decode(Parse_Response(result.stdout, PROVIDERS.OLLAMA))
+            if suggested_change and suggested_change.new_line == NO_CHANGE_STRING then return end
             if suggested_change then
+                Previous_Query_Data.suggested_line = suggested_change.new_line
+                Previous_Query_Data.request_id = request_id
+                Previous_Query_Data.line_number = cursor_line
+                Previous_Query_Data.used = false
+                Previous_Query_Data.valid_change = true
                 vim.schedule(function()
                     display_diff.display_diff(cursor_line, suggested_change.new_line)
                 end)
