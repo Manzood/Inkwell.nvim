@@ -96,10 +96,14 @@ local function is_path_expanded(expanded_state, entry_idx, path)
 end
 
 -- Render a JSON value recursively with expand/collapse support
-local function render_json_value(value, base_path, indent_level, expanded_state, entry_idx)
+-- line_to_path: table mapping buffer line numbers to their corresponding paths
+-- line_offset: current buffer line offset (where we're rendering)
+-- Returns: lines array, new_line_offset (where we ended up)
+local function render_json_value(value, base_path, indent_level, expanded_state, entry_idx, line_to_path, line_offset)
     indent_level = indent_level or 0
     local indent_str = string.rep("  ", indent_level)
     local lines = {}
+    line_offset = line_offset or 0
     
     if type(value) == "table" then
         -- Check if it's an array
@@ -122,29 +126,49 @@ local function render_json_value(value, base_path, indent_level, expanded_state,
             local path = base_path .. "[]"
             local is_expanded = is_path_expanded(expanded_state, entry_idx, path)
             local prefix = is_expanded and "▼" or "▶"
-            table.insert(lines, indent_str .. prefix .. " [")
+            local array_line = indent_str .. prefix .. " ["
+            table.insert(lines, array_line)
+            
+            -- Map this line to the path
+            if line_to_path then
+                line_to_path[line_offset] = path
+            end
+            local current_line = line_offset + 1
             
             if is_expanded then
                 for i, v in ipairs(value) do
                     local item_path = base_path .. "[" .. (i - 1) .. "]"
-                    local item_lines = render_json_value(v, item_path, indent_level + 1, expanded_state, entry_idx)
+                    local item_lines, new_offset = render_json_value(v, item_path, indent_level + 1, expanded_state, entry_idx, line_to_path, current_line)
                     for _, line in ipairs(item_lines) do
                         table.insert(lines, line)
                     end
+                    current_line = new_offset
                     if i < #value then
                         table.insert(lines, indent_str .. "  ,")
+                        current_line = current_line + 1
                     end
                 end
                 table.insert(lines, indent_str .. " ]")
+                current_line = current_line + 1
             else
                 table.insert(lines, indent_str .. "  ... (" .. #value .. " items)")
+                current_line = current_line + 1
             end
+            
+            return lines, current_line
         else
             -- Object
             local path = base_path .. "{}"
             local is_expanded = is_path_expanded(expanded_state, entry_idx, path)
             local prefix = is_expanded and "▼" or "▶"
-            table.insert(lines, indent_str .. prefix .. " {")
+            local object_line = indent_str .. prefix .. " {"
+            table.insert(lines, object_line)
+            
+            -- Map this line to the path
+            if line_to_path then
+                line_to_path[line_offset] = path
+            end
+            local current_line = line_offset + 1
             
             if is_expanded then
                 local keys = {}
@@ -162,44 +186,92 @@ local function render_json_value(value, base_path, indent_level, expanded_state,
                     local v = value[k]
                     local key_str = type(k) == "string" and ('"' .. k .. '"') or tostring(k)
                     local item_path = base_path .. "." .. tostring(k)
-                    local item_lines = render_json_value(v, item_path, indent_level + 1, expanded_state, entry_idx)
+                    
+                    -- Check if the value is a table (collapsible structure)
+                    local is_table = type(v) == "table"
+                    local nested_path = nil
+                    if is_table then
+                        -- Determine the nested path based on whether it's an array or object
+                        local is_array = false
+                        local max_key = 0
+                        local count = 0
+                        for key, _ in pairs(v) do
+                            count = count + 1
+                            if type(key) == "number" then
+                                is_array = true
+                                max_key = math.max(max_key, key)
+                            else
+                                is_array = false
+                                break
+                            end
+                        end
+                        nested_path = item_path .. (is_array and max_key == count and "[]" or "{}")
+                    end
+                    
+                    local item_lines, new_offset = render_json_value(v, item_path, indent_level + 1, expanded_state, entry_idx, line_to_path, current_line)
                     
                     -- First line goes on same line as key, rest are indented
                     if #item_lines > 0 then
-                        table.insert(lines, indent_str .. "  " .. key_str .. ": " .. item_lines[1])
+                        -- Check if first line is a collapsible structure (has ▶ or ▼)
+                        local first_line = item_lines[1]
+                        if first_line:match("[▶▼]") and nested_path then
+                            -- The collapsible structure is on the same line as the key
+                            -- Map this line to the nested path (overwrite any mapping from render_json_value)
+                            if line_to_path then
+                                line_to_path[current_line] = nested_path
+                            end
+                        end
+                        table.insert(lines, indent_str .. "  " .. key_str .. ": " .. first_line)
+                        -- The first line is merged with the key line, so we're at current_line + 1 now
+                        -- But render_json_value tracked it as current_line, so we need to adjust
+                        -- Use new_offset - 1 + 1 = new_offset (since render_json_value counted the first line)
+                        current_line = current_line + 1
                         for j = 2, #item_lines do
                             table.insert(lines, item_lines[j])
                         end
+                        -- new_offset already accounts for all lines including the first one
+                        -- But we merged the first line with the key line, so we're actually at new_offset
+                        current_line = new_offset
                     end
                     if i < #keys then
                         table.insert(lines, indent_str .. "  ,")
+                        current_line = current_line + 1
                     end
                 end
                 table.insert(lines, indent_str .. " }")
+                current_line = current_line + 1
             else
                 local key_count = 0
                 for _ in pairs(value) do
                     key_count = key_count + 1
                 end
                 table.insert(lines, indent_str .. "  ... (" .. key_count .. " keys)")
+                current_line = current_line + 1
             end
+            
+            return lines, current_line
         end
     elseif type(value) == "string" then
         -- Escape quotes and newlines
         local escaped = value:gsub('\\', '\\\\'):gsub('"', '\\"'):gsub('\n', '\\n')
         table.insert(lines, '"' .. escaped .. '"')
+        return lines, line_offset + 1
     else
         table.insert(lines, tostring(value))
+        return lines, line_offset + 1
     end
-    
-    return lines
 end
 
 -- Format a log entry for display
-local function format_entry(entry, index, expanded_state)
+-- line_to_path: table mapping buffer line numbers to their corresponding paths
+-- line_offset: current buffer line offset (where we're rendering this entry)
+-- Returns: lines array, new_line_offset (where we ended up)
+local function format_entry(entry, index, expanded_state, line_to_path, line_offset)
     expanded_state = expanded_state or {}
     local entry_expanded = expanded_state[index] or {}
     local lines = {}
+    line_offset = line_offset or 0
+    local current_line = line_offset
     
     -- Header line
     local timestamp = entry.timestamp_iso or entry.timestamp or "unknown"
@@ -207,6 +279,7 @@ local function format_entry(entry, index, expanded_state)
     local request_id = entry.request_id or index
     local header = string.format("▶ [%s] Request #%d - %s", timestamp, request_id, model)
     table.insert(lines, header)
+    current_line = current_line + 1
     
     -- Fields
     local fields = {
@@ -226,6 +299,7 @@ local function format_entry(entry, index, expanded_state)
             local value = entry[field.key]
             -- Don't truncate - let wrap handle long lines
             table.insert(lines, "  ├─ " .. field.label .. ": " .. tostring(value))
+            current_line = current_line + 1
         end
     end
     
@@ -240,7 +314,14 @@ local function format_entry(entry, index, expanded_state)
         if entry[field.key] ~= nil then
             local is_expanded = entry_expanded[field.key] or false
             local prefix = is_expanded and "▼" or "▶"
-            table.insert(lines, "  ├─ " .. prefix .. " " .. field.label .. ":")
+            local field_line = "  ├─ " .. prefix .. " " .. field.label .. ":"
+            table.insert(lines, field_line)
+            
+            -- Map this line to the top-level field path
+            if line_to_path then
+                line_to_path[current_line] = field.key
+            end
+            current_line = current_line + 1
             
             if is_expanded then
                 local value = entry[field.key]
@@ -257,15 +338,21 @@ local function format_entry(entry, index, expanded_state)
                 -- Use recursive renderer for nested structures
                 if type(parsed_value) == "table" then
                     local base_path = field.key
-                    local json_lines = render_json_value(parsed_value, base_path, 0, expanded_state, index)
+                    -- The nested content starts at current_line
+                    -- render_json_value will create mappings using current_line as the base offset
+                    local json_lines, new_offset = render_json_value(parsed_value, base_path, 0, expanded_state, index, line_to_path, current_line)
                     for _, line in ipairs(json_lines) do
                         table.insert(lines, "  │  " .. line)
                     end
+                    -- Update current_line based on what render_json_value returned
+                    -- new_offset already accounts for all lines rendered
+                    current_line = new_offset
                 else
                     -- Simple value - just display it
                     local formatted = type(value) == "string" and value or tostring(value)
                     for line in formatted:gmatch("[^\n]+") do
                         table.insert(lines, "  │  " .. line)
+                        current_line = current_line + 1
                     end
                 end
             else
@@ -281,19 +368,23 @@ local function format_entry(entry, index, expanded_state)
                     end
                 end
                 table.insert(lines, "  │  " .. preview)
+                current_line = current_line + 1
             end
         end
     end
     
     -- Footer
     table.insert(lines, "")
+    current_line = current_line + 1
     
-    return lines
+    return lines, current_line
 end
 
 -- Render all entries to buffer
-local function render_buffer(bufnr, entries, expanded_state)
+-- Returns: line_to_path mapping table
+local function render_buffer(bufnr, entries, expanded_state, line_to_path)
     expanded_state = expanded_state or {}
+    line_to_path = line_to_path or {}
     local lines = {}
     
     -- Header
@@ -310,6 +401,9 @@ local function render_buffer(bufnr, entries, expanded_state)
     table.insert(lines, string.rep("─", 80))
     table.insert(lines, "")
     
+    local header_lines = #lines
+    local current_line = header_lines
+    
     if #entries == 0 then
         table.insert(lines, "No log entries found.")
         table.insert(lines, "Log file: " .. get_log_path())
@@ -317,14 +411,16 @@ local function render_buffer(bufnr, entries, expanded_state)
         -- Render entries (newest first)
         for i = #entries, 1, -1 do
             local entry = entries[i]
-            local entry_lines = format_entry(entry, i, expanded_state)
+            local entry_lines, new_offset = format_entry(entry, i, expanded_state, line_to_path, current_line)
             for _, line in ipairs(entry_lines) do
                 table.insert(lines, line)
             end
+            current_line = new_offset
         end
     end
     
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+    return line_to_path
 end
 
 -- Toggle expansion of a field (supports nested paths like "query_payload.messages[0]")
@@ -337,7 +433,8 @@ end
 
 
 -- Find which entry and field the cursor is on
-local function get_cursor_location(bufnr, entries, expanded_state)
+-- Uses line_to_path mapping for reliable path detection
+local function get_cursor_location(bufnr, entries, expanded_state, line_to_path)
     local line_num = vim.api.nvim_win_get_cursor(0)[1] - 1
     
     -- Skip header lines
@@ -346,144 +443,59 @@ local function get_cursor_location(bufnr, entries, expanded_state)
         return nil, nil
     end
     
-    -- Get the actual line content from buffer
-    local buffer_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-    local current_line_content = buffer_lines[line_num + 1] or ""
-    
-    -- Check if we're on a collapsible line (top-level field or nested structure)
-    -- Top-level: "  ├─ ▶ query_payload:" or "  ├─ ▼ query_payload:"
-    -- Nested: "  │    ▶ [" or "  │    ▶ {" or "  │      ▶ [0]"
+    -- Try to get path from line_to_path mapping first (most reliable)
     local field_path = nil
-    
-    -- Check for top-level field (starts with "  ├─")
-    if current_line_content:match("^%s+├─") and current_line_content:match(":") then
-        -- Extract the field name: everything after ├─ symbol space and before :
-        local match = current_line_content:match("├─%s*[^%s]%s+([^:]+):")
-        if match then
-            field_path = match:gsub("^%s+", ""):gsub("%s+$", "")
+    if line_to_path then
+        -- Check current line and nearby lines (in case of wrapping or slight offsets)
+        for offset = 0, 2 do
+            local check_line = line_num + offset
+            if line_to_path[check_line] then
+                field_path = line_to_path[check_line]
+                break
+            end
         end
-        
-        -- Alternative: match everything between ├─ and :, then extract last word
+        -- Debug: check a wider range if not found
         if not field_path then
-            local before_colon = current_line_content:match("├─%s*([^:]+):")
-            if before_colon then
-                local field_match = before_colon:match("%s+([^%s]+)%s*$")
-                if field_match then
-                    field_path = field_match
-                end
-            end
-        end
-    -- Check for nested structure (starts with "  │" and has ▶, ▼, or ►)
-    -- Pattern: "  │    ▶ {" or "  │    ▼ {" or "  │    ▶ [" or "  │    ►{" etc.
-    elseif current_line_content:match("│") and current_line_content:match("[▶▼►]") then
-        -- Reconstruct the full nested path by scanning upward and building path components
-        local base_field = nil
-        
-        -- Find the base field first - use the simplest possible approach
-        for i = line_num, header_lines, -1 do
-            local line = buffer_lines[i + 1] or ""
-            -- Look for the field header line (has ├─ and :)
-            if line:match("├─") and line:match(":") then
-                -- Direct string search - most reliable
-                if string.find(line, "query_payload", 1, true) then
-                    base_field = "query_payload"
-                    break
-                elseif string.find(line, "response", 1, true) then
-                    base_field = "response"
-                    break
-                elseif string.find(line, "context_lines", 1, true) then
-                    base_field = "context_lines"
+            for offset = -2, 5 do
+                local check_line = line_num + offset
+                if line_to_path[check_line] then
+                    field_path = line_to_path[check_line]
                     break
                 end
-            end
-        end
-        
-        if base_field then
-            -- Build path components by scanning upward
-            local path_components = {base_field}
-            local current_indent = #current_line_content:match("^%s*")
-            
-            -- Scan upward to find parent structures
-            for i = line_num - 1, header_lines, -1 do
-                local line = buffer_lines[i + 1] or ""
-                if line:match("^%s+├─") then
-                    break  -- Reached base field
-                end
-                
-                local line_indent = #line:match("^%s*")
-                
-                -- Only process lines that are less indented (parent structures)
-                if line_indent < current_indent and line:match("[▶▼►]") then
-                    -- Check for object key (format: "  │    "key": ▶" or "  │      "key": value")
-                    -- Try pattern with expand/collapse symbol first (handle ▶, ▼, and ►)
-                    local key_match = line:match('"%([^"]+)"%s*:%s*[▶▼►]')
-                    -- If not found, try pattern without symbol (might be on next line)
-                    if not key_match then
-                        key_match = line:match('"%([^"]+)"%s*:')
-                    end
-                    if key_match then
-                        table.insert(path_components, 1, "." .. key_match)
-                        current_indent = line_indent
-                    -- Check for array marker (handle ▶, ▼, and ►)
-                    elseif line:match("[▶▼►]%s*%[") or line:match("[▶▼►]%[") then
-                        -- Count array items to get index
-                        local item_count = 0
-                        for j = i + 1, line_num do
-                            local check_line = buffer_lines[j + 1] or ""
-                            local check_indent = #check_line:match("^%s*")
-                            -- Count non-collapsed items at the array's indent level
-                            if check_indent == line_indent + 2 and not (check_line:match("[▶▼►]") or check_line:match(",") or check_line:match("%]")) then
-                                item_count = item_count + 1
-                            elseif check_line:match("%]") then
-                                break
-                            end
-                        end
-                        table.insert(path_components, 1, "[" .. item_count .. "]")
-                        current_indent = line_indent
-                    -- Check for object marker (handle ▶, ▼, and ►)
-                    elseif line:match("[▶▼►]%s*%{") or line:match("[▶▼►]%{") then
-                        table.insert(path_components, 1, "{}")
-                        current_indent = line_indent
-                    end
-                end
-            end
-            
-            -- Build the path string
-            local path_str = table.concat(path_components)
-            
-            -- Add the current structure marker (handle ▶, ▼, and ► with or without space)
-            -- Since we're on a line with │ and triangle, it's definitely a nested structure
-            -- Default to {} if we can't determine the exact type
-            if current_line_content:match("[▶▼►]%s*%[") or current_line_content:match("[▶▼►]%[") then
-                field_path = path_str .. "[]"
-            elseif current_line_content:match("[▶▼►]%s*%{") or current_line_content:match("[▶▼►]%{") then
-                field_path = path_str .. "{}"
-            else
-                -- Default: assume it's an object (most common case)
-                field_path = path_str .. "{}"
             end
         end
     end
     
-    -- CRITICAL FALLBACK: If field_path is still nil, use the simplest possible approach
+    -- Fallback: check for top-level field if mapping didn't work
     if not field_path then
-        -- Scan upward and use direct string search
-        for i = line_num, header_lines, -1 do
-            local line = buffer_lines[i + 1] or ""
-            if line:match("├─") and line:match(":") then
-                -- Debug: log the actual line content
-                -- Use string.find with plain text search (no patterns)
-                -- Also try case-insensitive and partial matches
-                local line_lower = string.lower(line)
-                if string.find(line_lower, "query_payload", 1, true) or string.find(line, "query_payload", 1, true) then
-                    field_path = "query_payload{}"
-                    break
-                elseif string.find(line_lower, "response", 1, true) or string.find(line, "response", 1, true) then
-                    field_path = "response{}"
-                    break
-                elseif string.find(line_lower, "context_lines", 1, true) or string.find(line, "context_lines", 1, true) then
-                    field_path = "context_lines{}"
-                    break
+        local buffer_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+        local current_line_content = buffer_lines[line_num + 1] or ""
+        
+        -- Check for top-level field (starts with "  ├─" and has ▶/▼)
+        if current_line_content:match("^%s+├─") and current_line_content:match(":") then
+            -- Check if it's a collapsible field (has ▶ or ▼)
+            if current_line_content:match("[▶▼]") then
+                -- Extract the field name - look for query_payload, response, or context_lines
+                if string.find(current_line_content, "query_payload", 1, true) then
+                    field_path = "query_payload"
+                elseif string.find(current_line_content, "response", 1, true) then
+                    field_path = "response"
+                elseif string.find(current_line_content, "context_lines", 1, true) then
+                    field_path = "context_lines"
+                else
+                    -- Fallback: extract field name using pattern matching
+                    local match = current_line_content:match("├─%s*[▶▼]%s+([^:]+):")
+                    if match then
+                        field_path = match:gsub("^%s+", ""):gsub("%s+$", "")
+                    else
+                        local before_colon = current_line_content:match("├─%s*[▶▼]%s*([^:]+):")
+                        if before_colon then
+                            local field_match = before_colon:match("%s+([^%s]+)%s*$")
+                            if field_match then
+                                field_path = field_match
+                            end
+                        end
+                    end
                 end
             end
         end
@@ -494,20 +506,15 @@ local function get_cursor_location(bufnr, entries, expanded_state)
     end
     
     -- Find which entry this line belongs to by scanning upward for the entry header
-    -- Entry headers look like: "▶ [timestamp] Request #id model"
+    local buffer_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     local entry_idx = nil
     for i = line_num, header_lines, -1 do
         local line = buffer_lines[i + 1] or ""
-        -- Check if this is an entry header line
         if line:match("^▶ %[") then
-            -- Extract request ID from header: "▶ [timestamp] Request #id model"
             local request_id_match = line:match("Request #(%d+)")
             if request_id_match then
                 local request_id = tonumber(request_id_match)
-                -- Find the entry index (entries are rendered newest first, so reverse the index)
-                -- Entry at index #entries has request_id = #entries, entry at #entries-1 has request_id = #entries-1, etc.
-                -- But we need to account for the fact that request_id might not match index exactly
-                -- So we'll search through entries to find the matching one
+                -- Find the entry index
                 for j = #entries, 1, -1 do
                     local entry = entries[j]
                     if entry.request_id == request_id or (not entry.request_id and j == request_id) then
@@ -515,16 +522,13 @@ local function get_cursor_location(bufnr, entries, expanded_state)
                         break
                     end
                 end
-                -- If we couldn't find by request_id, use the position-based approach
                 if not entry_idx then
-                    -- Count how many entry headers we've seen from the top
                     local entry_count = 0
                     for k = header_lines, i do
                         if buffer_lines[k + 1]:match("^▶ %[") then
                             entry_count = entry_count + 1
                         end
                     end
-                    -- Since entries are rendered newest first, entry_count corresponds to entry index
                     entry_idx = #entries - entry_count + 1
                 end
                 break
@@ -532,7 +536,7 @@ local function get_cursor_location(bufnr, entries, expanded_state)
         end
     end
     
-    -- If we didn't find entry_idx, try a simpler approach: count entries from top
+    -- If we didn't find entry_idx, try counting entries from top
     if not entry_idx then
         local entry_count = 0
         for i = header_lines, line_num do
@@ -553,12 +557,11 @@ local function get_cursor_location(bufnr, entries, expanded_state)
             context_lines = "context_lines",
         }
         
-        -- Extract base field (everything before first . or [)
-        local base_field = field_path:match("^([^%.%[]+)")
+        -- Extract base field (everything before first ., [, or {)
+        local base_field = field_path:match("^([^%.%[%{]+)")
         
         -- Check if base field is valid
         if key_map[base_field] then
-            -- Path is valid - return it (supports any depth of nesting)
             return entry_idx, field_path
         end
     end
@@ -570,6 +573,7 @@ end
 function M.open()
     local entries = read_log_entries()
     local expanded_state = {}
+    local line_to_path = {}  -- Mapping from buffer line numbers to paths
     
     -- Check if buffer already exists and close any windows using it
     local existing_bufnr = nil
@@ -601,7 +605,7 @@ function M.open()
     
     -- Render initial content (need modifiable = true to write)
     vim.api.nvim_buf_set_option(bufnr, "modifiable", true)
-    render_buffer(bufnr, entries, expanded_state)
+    line_to_path = render_buffer(bufnr, entries, expanded_state, line_to_path)
     vim.api.nvim_buf_set_option(bufnr, "modifiable", false)
     
     -- Create window (larger size, nearly fullscreen)
@@ -630,8 +634,9 @@ function M.open()
     -- Keybindings
     local function refresh()
         entries = read_log_entries()
+        line_to_path = {}  -- Reset mapping
         vim.api.nvim_buf_set_option(bufnr, "modifiable", true)
-        render_buffer(bufnr, entries, expanded_state)
+        line_to_path = render_buffer(bufnr, entries, expanded_state, line_to_path)
         vim.api.nvim_buf_set_option(bufnr, "modifiable", false)
     end
     
@@ -640,12 +645,13 @@ function M.open()
         local buffer_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
         local current_line_content = buffer_lines[current_line + 1] or ""
         
-        local entry_idx, field_key = get_cursor_location(bufnr, entries, expanded_state)
+        local entry_idx, field_key = get_cursor_location(bufnr, entries, expanded_state, line_to_path)
         
         if entry_idx and field_key then
             toggle_field(entries, expanded_state, entry_idx, field_key)
+            line_to_path = {}  -- Reset mapping before re-rendering
             vim.api.nvim_buf_set_option(bufnr, "modifiable", true)
-            render_buffer(bufnr, entries, expanded_state)
+            line_to_path = render_buffer(bufnr, entries, expanded_state, line_to_path)
             vim.api.nvim_buf_set_option(bufnr, "modifiable", false)
             
             -- Try to restore cursor position (approximate)
@@ -653,42 +659,24 @@ function M.open()
             local new_line = math.min(current_line, total_lines - 1)
             vim.api.nvim_win_set_cursor(0, { new_line + 1, 0 })
         else
-            -- Debug: show what we detected
-            local has_pipe = current_line_content:match("│") and "yes" or "no"
-            local has_triangle_debug = current_line_content:match("[▶▼►]") and "yes" or "no"
-            local triangle_char = current_line_content:match("[▶▼►]") or "none"
-            local has_brace = (current_line_content:match("%{") or current_line_content:match("%[")) and "yes" or "no"
+            -- Debug output
+            local nearby_mappings = {}
+            for offset = -3, 3 do
+                local check_line = current_line + offset
+                if line_to_path and line_to_path[check_line] then
+                    table.insert(nearby_mappings, string.format("L%d:%s", check_line, line_to_path[check_line]))
+                end
+            end
             
             -- Check if user is on entry header (can't expand that)
             if current_line_content:match("^▶ %[") then
                 vim.notify("Navigate down to a field line (like '  ├─ ▶ query_payload:') to expand/collapse", vim.log.levels.INFO)
             else
-                -- Additional debug: show what we found when scanning upward
-                local found_base_field = nil
-                local current_line_debug = vim.api.nvim_win_get_cursor(0)[1] - 1
-                for i = current_line_debug, 12, -1 do
-                    local line = vim.api.nvim_buf_get_lines(bufnr, i, i + 1, false)[1] or ""
-                    if line:match("├─") and line:match(":") then
-                        found_base_field = line:sub(1, 60)
-                        break
-                    end
-                end
-                
-                -- Also check what base_field was set to in get_cursor_location
-                local entry_idx_debug, field_path_debug = get_cursor_location(bufnr, entries, expanded_state)
-                
-                vim.notify(string.format("Debug - Line: '%s' | │:%s | Triangle:%s (%s) | Brace/Bracket:%s | Entry:%s | Path:%s | Base field line: %s | After get_cursor_location: Entry:%s Path:%s", 
-                    current_line_content:sub(1, 50),
-                    has_pipe,
-                    has_triangle_debug,
-                    triangle_char,
-                    has_brace,
-                    tostring(entry_idx) or "nil",
-                    tostring(field_path) or "nil",
-                    found_base_field or "not found",
-                    tostring(entry_idx_debug) or "nil",
-                    tostring(field_path_debug) or "nil"), 
-                    vim.log.levels.WARN)
+                local debug_msg = string.format("Cannot expand - Line %d: '%s' | Nearby mappings: %s", 
+                    current_line, 
+                    current_line_content:sub(1, 40),
+                    #nearby_mappings > 0 and table.concat(nearby_mappings, ", ") or "none")
+                vim.notify(debug_msg, vim.log.levels.WARN)
             end
         end
     end
