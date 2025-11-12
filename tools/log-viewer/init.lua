@@ -435,7 +435,24 @@ local function render_buffer(bufnr, entries, expanded_state, line_to_path)
         end
     end
     
-    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+    -- Sanitize lines: split any lines containing newlines into multiple lines
+    local sanitized_lines = {}
+    for _, line in ipairs(lines) do
+        if line:match("\n") then
+            -- Split line by newlines
+            for split_line in line:gmatch("[^\n]+") do
+                table.insert(sanitized_lines, split_line)
+            end
+            -- If line ends with newline, add empty line
+            if line:match("\n$") then
+                table.insert(sanitized_lines, "")
+            end
+        else
+            table.insert(sanitized_lines, line)
+        end
+    end
+    
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, sanitized_lines)
     return line_to_path
 end
 
@@ -444,7 +461,29 @@ local function toggle_field(entries, expanded_state, entry_idx, field_path)
     if not expanded_state[entry_idx] then
         expanded_state[entry_idx] = {}
     end
-    expanded_state[entry_idx][field_path] = not (expanded_state[entry_idx][field_path] or false)
+    local was_expanded = expanded_state[entry_idx][field_path] or false
+    expanded_state[entry_idx][field_path] = not was_expanded
+    
+    -- If we're expanding a top-level field, automatically expand its immediate nested structure
+    if not was_expanded then  -- We just expanded it
+        local top_level_fields = {"query_payload", "response", "context_lines"}
+        
+        -- Check if this is a top-level field
+        local is_top_level = false
+        for _, field in ipairs(top_level_fields) do
+            if field_path == field then
+                is_top_level = true
+                break
+            end
+        end
+        
+        if is_top_level then
+            -- Try to auto-expand both object and array structures
+            -- The actual structure type will be determined by what exists in the data
+            expanded_state[entry_idx][field_path .. "{}"] = true
+            expanded_state[entry_idx][field_path .. "[]"] = true
+        end
+    end
 end
 
 
@@ -587,7 +626,31 @@ end
 
 -- Open the log viewer
 function M.open()
+    -- Clean up log file to keep only last 100 entries
     local entries = read_log_entries()
+    if #entries > 100 then
+        -- Trim to last 100 entries
+        local log_path = get_log_path()
+        local start = #entries - 100 + 1
+        local trimmed_entries = {}
+        for i = start, #entries do
+            table.insert(trimmed_entries, entries[i])
+        end
+        
+        -- Write trimmed entries back to file
+        local file = io.open(log_path, "w")
+        if file then
+            for _, entry in ipairs(trimmed_entries) do
+                local ok, json_line = pcall(vim.fn.json_encode, entry)
+                if ok then
+                    file:write(json_line .. "\n")
+                end
+            end
+            file:close()
+            entries = trimmed_entries
+        end
+    end
+    
     local expanded_state = {}
     local line_to_path = {}  -- Mapping from buffer line numbers to paths
     

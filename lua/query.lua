@@ -63,7 +63,11 @@ Notes:
 - Please do not ignore the whitespace in the current line when you output it.
 ]]
 
-NO_CHANGE_STRING = "42"
+-- TODO add parsing for backticks and JSON in the response, since some smaller language models don't seem to understand the output format no matter how specific you are
+-- It might just be easier to ask every model to output in a well-known JSON format, and then parse it.
+
+NO_CHANGE_STRING = "42" -- TODO make this something more obscure. But also something a language model won't struggle to output correctly.
+                        -- alternative: have a specific output when it comes to deleting lines. And an empty output means no change.
 Suggestion_Just_Accepted = false
 
 local GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -99,7 +103,8 @@ Parse_Response = function(response, provider)
     -- add check to see if it was decoded successfully
     local decoded, err = vim.json.decode(response)
     if err then
-        print("Error decoding response: " .. err)
+        print("Error decoding response: " .. vim.inspect(err))
+        print("Response: " .. response)
         return
     end
     if provider == PROVIDERS.GROQ then
@@ -122,6 +127,7 @@ function Query_via_cmd_line(url, query, api_key)
     table.insert(command, "-d")
     table.insert(command, query)
     local cursor_line = vim.api.nvim_win_get_cursor(0)[1] - 1
+    local original_line = vim.api.nvim_buf_get_lines(0, cursor_line - 1, cursor_line, false)[1]
 
     local current_job = vim.system(command,
         { text = true },
@@ -132,23 +138,27 @@ function Query_via_cmd_line(url, query, api_key)
                 return
             end
 
+            Previous_Query_Data.request_id = Current_Request_Id
+            Previous_Query_Data.response = result.stdout
+            print("GROQ Response: " .. Parse_Response(result.stdout, PROVIDERS.GROQ))
+            local suggested_change = vim.json.decode(Parse_Response(result.stdout, PROVIDERS.GROQ))
+            if not suggested_change or suggested_change.new_line == NO_CHANGE_STRING then return end
+
             logger.log_query({
                 request_id = request_id,
                 url = url,
-                model = GPTOSS20B,
+                model = MODELS.GPTOSS20B,
                 query = query,
                 response = result.stdout,
+                suggested_line = suggested_change.new_line,
+                cursor_line = cursor_line,
+                original_line = original_line,
             })
-
-            Previous_Query_Data.request_id = Current_Request_Id
-            Previous_Query_Data.response = result.stdout
-            local suggested_change = vim.json.decode(Parse_Response(result.stdout, PROVIDERS.GROQ))
-            if suggested_change and suggested_change.new_line == NO_CHANGE_STRING then return end
 
             if suggested_change then
                 Previous_Query_Data.suggested_line = suggested_change.new_line
                 Previous_Query_Data.request_id = request_id
-                Previous_Query_Data.line_number = cursor_line
+                Previous_Query_Data.cursor_line = cursor_line
                 Previous_Query_Data.used = false
                 Previous_Query_Data.valid_change = true
                 vim.schedule(function()
@@ -173,6 +183,7 @@ local function query_local_model(url, model, query)
         "-d", query,
     }
     local cursor_line = vim.api.nvim_win_get_cursor(0)[1] - 1
+    local original_line = vim.api.nvim_buf_get_lines(0, cursor_line - 1, cursor_line, false)[1]
 
     local current_job = vim.system(
         command,
@@ -182,6 +193,12 @@ local function query_local_model(url, model, query)
                 print("Ollama query failed:", result.stderr)
                 return
             end
+ 
+            Previous_Query_Data.request_id = request_id
+            Previous_Query_Data.response = result.stdout
+            print(Parse_Response(result.stdout, PROVIDERS.OLLAMA))
+            local suggested_change = vim.json.decode(Parse_Response(result.stdout, PROVIDERS.OLLAMA))
+            if not suggested_change or suggested_change.new_line == NO_CHANGE_STRING then return end
 
             logger.log_query({
                 request_id = request_id,
@@ -189,17 +206,15 @@ local function query_local_model(url, model, query)
                 model = model,
                 query = query,
                 response = result.stdout,
+                suggested_line = suggested_change.new_line,
+                cursor_line = cursor_line,
+                original_line = original_line,
             })
 
-
-            Previous_Query_Data.response = result.stdout
-            print(vim.inspect(result.stdout))
-            local suggested_change = vim.json.decode(Parse_Response(result.stdout, PROVIDERS.OLLAMA))
-            if suggested_change and suggested_change.new_line == NO_CHANGE_STRING then return end
             if suggested_change then
                 Previous_Query_Data.suggested_line = suggested_change.new_line
                 Previous_Query_Data.request_id = request_id
-                Previous_Query_Data.line_number = cursor_line
+                Previous_Query_Data.cursor_line = cursor_line
                 Previous_Query_Data.used = false
                 Previous_Query_Data.valid_change = true
                 vim.schedule(function()
@@ -220,59 +235,6 @@ function Query_Phi3(content)
     query_local_model(OLLAMA_CHAT_URL, MODELS.PHI3, Create_Query(MODELS.PHI3, content))
 end
 
--- local function old_query_groq(prompt)
---     local response = curl.post(GROQ_URL, {
---         headers = {
---             ["Content-Type"] = "application/json",
---             ["Authorization"] = "Bearer " .. GROQ_API_KEY,
---         },
---         body = json({
---             model = "openai/gpt-oss-20b",
---             messages = {
---                 -- { role = "system", content = "You are GhostCursor.nvim." },
---                 { role = "user", content = prompt },
---             },
---             -- temperature = 1,
---             -- max_completion_tokens = 8192,
---             -- top_p = 1,
---             -- stream = true,
---             -- reasoning_effort = "medium",
---             -- stop = "null"
---         }),
---     })
-
---     if response.status == 200 then
---         local decoded = vim.json.decode(response.body)
---         -- print(decoded.choices[1].message.content)
---         return decoded.choices[1].message.content
---     else
---         print("Groq API request failed:", response.status, response.body)
---     end
--- end
-
 local function query_aws(prompt)
 
 end
-
-Sample_response = [[
-{"id":"chatcmpl-11f8af06-9f2e-4e88-85e8-2fda9309e5b1","object":"chat.completion","created":1762417271,"model":"openai/gpt-oss-20b","choices":[{"index":0,"message":{"
-role":"assistant","content":"{\n  \"new_line\": \"    if content ~= '' then Query_Groq(content) end\"\n}","reasoning":"We need to suggest a line at cursor line 10. Let's count lin
-es. Provided snippet:\n\n1 local cnt = 0\n2 Send_query = debounce(function(bufnr)\n3     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)\n4     local content = table
-.concat(lines, \"\\n\")\n5     -- send to API here\n6     cnt = cnt + 1\n7     Last_request_id = Last_request_id + 1\n8     cancel_current_request()\n9     -- Query_via_cmd_line(G
-ROQ_URL, content)\n10     Query_Groq(content)\n11     -- print(\"Query sent for buffer\", bufnr, \"with count\", cnt)\n12 end, 300)\n13\n14 -- TODO maybe this will already be crea
-ted elsewhere\n15 local group = api.nvim_create_augroup(\"GhostCursor\", { clear = true })\n16\n17 -- TODO double check what TextChangedI is\n18 api.nvim_create_autocmd({ \"TextCh
-anged\", \"TextChangedI\" }, {\n19     group = group,\n20     callback = function(args)\n\nCursor line 10 is \"Query_Groq(content)\". We need to suggest improvement or continuatio
-n. Maybe we want to pass bufnr or other context? Or handle error? Or maybe we want to add a check for empty content? Or maybe we want to throttle? But debounce already. Maybe we w
-ant to add a guard: if content == \"\" then return? Or maybe we want to log? The TODO earlier: \"TODO maybe this will already be created elsewhere\" refers to group. Not relevant.
-\n\nWe might want to add a check for empty content: if content == \"\" then return end. That would avoid sending empty query. That seems functional improvement.\n\nAlso maybe we w
-ant to use Query_Groq(content, bufnr) if function expects buffer id. But we don't know signature.\n\nBetter: add a guard: if content == \"\" then return end. That is a small impro
-vement.\n\nThus new line could be inserted before Query_Groq? But cursor is at line 10. We can replace line 10 with something else? The instruction: \"Predict the most likely impr
-oved or continued version of that single line\". So we can modify line 10. So we can change \"Query_Groq(content)\" to \"if content ~= '' then Query_Groq(content) end\". That is a
- single line. That would be improvement.\n\nThus output new_line: \"if content ~= '' then Query_Groq(content) end\". Ensure indentation same as original: 4 spaces? Actually line 1
-0 has 4 spaces indent? Let's check: line 2 has 4 spaces before local lines? Actually line 2: \"Send_query = debounce(function(bufnr)\" no indent. Inside function, lines 3-11 have
-4 spaces indent. So line 10 has 4 spaces indent. So new line should have 4 spaces indent.\n\nThus output JSON: {\"new_line\":\"    if content ~= '' then Query_Groq(content) end\"}
-.\n\nCheck: we need to escape quotes? JSON string. Use double quotes inside string. So we need to escape inner double quotes? We have single quotes inside string, so fine. So fina
-l."},"logprobs":null,"finish_reason":"stop"}],"usage":{"queue_time":0.053267522,"prompt_tokens":426,"prompt_time":0.023929508,"completion_tokens":694,"completion_time":0.699691476
-,"total_tokens":1120,"total_time":0.723620984,"completion_tokens_details":{"reasoning_tokens":664}},"usage_breakdown":null,"system_fingerprint":"fp_e99e93f2ac","x_groq":{"id":"req
-_01k9c42r1aezpbhc2wmfjn0dkm"},"service_tier":"on_demand"}
-]]

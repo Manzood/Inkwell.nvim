@@ -1,3 +1,5 @@
+local display_diff = require("display-diff")
+
 -- function to replace a specific line in the buffer with the new line content
 local function replace(line_nr, new_line_content) 
     vim.api.nvim_buf_set_lines(0, line_nr, line_nr + 1, false, { new_line_content })
@@ -9,10 +11,12 @@ end
 -- end, { noremap = true, silent = true, desc = "Ghostcursor: inline diff test" })
 
 function Apply_Suggested_Change()
-    print(vim.inspect(Previous_Query_Data))
-    print(Current_Request_Id)
+    -- print(vim.inspect(Previous_Query_Data))
+    -- print(Current_Request_Id)
     if Current_Request_Id == Previous_Query_Data.request_id and Previous_Query_Data.valid_change then
-        replace(Previous_Query_Data.line_number, Previous_Query_Data.suggested_line)
+        replace(Previous_Query_Data.cursor_line, Previous_Query_Data.suggested_line)
+        -- remove all existing suggestions
+        display_diff.clear({ bufnr = vim.api.nvim_get_current_buf() })
         Suggestion_Just_Accepted = true
     end
 end

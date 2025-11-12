@@ -24,8 +24,8 @@ Send_Query = debounce(function(bufnr)
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     local content = table.concat(lines, "\n")
     Current_Request_Id = Current_Request_Id + 1
-    -- local job_id = Query_Groq(content)
-    local job_id = Query_Phi3(content)
+    local job_id = Query_Groq(content)
+    -- local job_id = Query_Phi3(content)
 end, 300)
 
 -- TODO maybe this will already be created elsewhere
@@ -42,7 +42,7 @@ api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
         -- display the suggestion
         -- has to be async
         -- send_query(args.buf)
-        Send_Query(args.buf)
+        -- Send_Query(args.buf)
     end,
 })
 

@@ -16,23 +16,54 @@ local function get_log_path()
 end
 get_log_path()
 
--- Write a log entry to file
+-- Write a log entry to file and maintain max_history limit
 local function write_log_entry(entry)
     local log_path = get_log_path()
-    local file = io.open(log_path, "a")
-    if not file then
-        vim.notify("Failed to open log file: " .. log_path, vim.log.levels.WARN)
-        return false
-    end
     
-    local ok, json_line = pcall(vim.fn.json_encode, entry)
-    if not ok then
+    -- Read existing entries
+    local existing_entries = {}
+    local file = io.open(log_path, "r")
+    if file then
+        for line in file:lines() do
+            if line and line ~= "" then
+                local ok, existing_entry = pcall(vim.json.decode, line)
+                if ok and existing_entry then
+                    table.insert(existing_entries, existing_entry)
+                end
+            end
+        end
         file:close()
-        vim.notify("Failed to encode log entry to JSON: " .. tostring(json_line), vim.log.levels.ERROR)
+    end
+    
+    -- Add new entry
+    table.insert(existing_entries, entry)
+    
+    -- Keep only the last max_history entries
+    if #existing_entries > query_log.max_history then
+        local start = #existing_entries - query_log.max_history + 1
+        local trimmed_entries = {}
+        for i = start, #existing_entries do
+            table.insert(trimmed_entries, existing_entries[i])
+        end
+        existing_entries = trimmed_entries
+    end
+    
+    -- Write all entries back to file
+    file = io.open(log_path, "w")
+    if not file then
+        vim.notify("Failed to open log file for writing: " .. log_path, vim.log.levels.WARN)
         return false
     end
     
-    file:write(json_line .. "\n")
+    for _, existing_entry in ipairs(existing_entries) do
+        local ok, json_line = pcall(vim.fn.json_encode, existing_entry)
+        if ok then
+            file:write(json_line .. "\n")
+        else
+            vim.notify("Failed to encode log entry to JSON: " .. tostring(json_line), vim.log.levels.ERROR)
+        end
+    end
+    
     file:close()
     return true
 end
@@ -105,6 +136,40 @@ function query_log.read_all()
     end
     file:close()
     return queries
+end
+
+-- Clean up log file to keep only the last max_history entries
+function query_log.cleanup()
+    local log_path = get_log_path()
+    local entries = query_log.read_all()
+    
+    if #entries <= query_log.max_history then
+        return -- No cleanup needed
+    end
+    
+    -- Keep only the last max_history entries
+    local start = #entries - query_log.max_history + 1
+    local trimmed_entries = {}
+    for i = start, #entries do
+        table.insert(trimmed_entries, entries[i])
+    end
+    
+    -- Write trimmed entries back to file
+    local file = io.open(log_path, "w")
+    if not file then
+        vim.notify("Failed to open log file for cleanup: " .. log_path, vim.log.levels.WARN)
+        return false
+    end
+    
+    for _, entry in ipairs(trimmed_entries) do
+        local ok, json_line = pcall(vim.fn.json_encode, entry)
+        if ok then
+            file:write(json_line .. "\n")
+        end
+    end
+    
+    file:close()
+    return true
 end
 
 return query_log
