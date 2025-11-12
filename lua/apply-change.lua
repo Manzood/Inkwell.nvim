@@ -14,7 +14,12 @@ function Apply_Suggested_Change()
     -- print(vim.inspect(Previous_Query_Data))
     -- print(Current_Request_Id)
     if Current_Request_Id == Previous_Query_Data.request_id and Previous_Query_Data.valid_change then
-        replace(Previous_Query_Data.cursor_line, Previous_Query_Data.suggested_line)
+        if Previous_Query_Data.delete_line then
+            vim.api.nvim_buf_set_lines(vim.api.nvim_get_current_buf(), Previous_Query_Data.cursor_line, Previous_Query_Data.cursor_line + 1, false, {})
+            Previous_Query_Data.delete_line = false
+        else
+            replace(Previous_Query_Data.cursor_line, Previous_Query_Data.suggested_line)
+        end
         -- remove all existing suggestions
         display_diff.clear({ bufnr = vim.api.nvim_get_current_buf() })
         Suggestion_Just_Accepted = true

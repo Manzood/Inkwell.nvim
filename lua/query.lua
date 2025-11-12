@@ -30,6 +30,10 @@ local PROVIDERS = {
     OLLAMA = "ollama",
 }
 
+NO_CHANGE_STRING = "<NO_CHANGE_STRING>" -- TODO make this something more obscure. But also something a language model won't struggle to output correctly.
+                        -- alternative: have a specific output when it comes to deleting lines. And an empty output means no change.
+DELETE_LINE_STRING = "<DELETE_LINE_STRING>"
+
 local API_AGENT_PROMPT = [[
 You are a precise code-completion agent.
 You will be given a code snippet and the current line under the cursor.
@@ -44,8 +48,9 @@ Requirements:
   over whitespace or cosmetic formatting.
 - Keep indentation and naming consistent with the file.
 - The change suggested can be an partial change in a planned series of changes. It is okay to suggest such a change because it can help guide the user in that direction.
-- If there is no meaningful change or continuation, output the string "42" as the new line. Please do not output anything aside from that.
-- Never alter any other lines.
+- If there is no meaningful change or continuation, output the string <NO_CHANGE_STRING> as the new line. Please do not output anything aside from that.
+- If you instead intend to delete the current line, output the string <DELETE_LINE_STRING> as the new line. Please do not output anything aside from that.
+- *Never* alter any other lines.
 
 Input:
 Language: <filetype>
@@ -66,8 +71,6 @@ Notes:
 -- TODO add parsing for backticks and JSON in the response, since some smaller language models don't seem to understand the output format no matter how specific you are
 -- It might just be easier to ask every model to output in a well-known JSON format, and then parse it.
 
-NO_CHANGE_STRING = "42" -- TODO make this something more obscure. But also something a language model won't struggle to output correctly.
-                        -- alternative: have a specific output when it comes to deleting lines. And an empty output means no change.
 Suggestion_Just_Accepted = false
 
 local GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -156,6 +159,10 @@ function Query_via_cmd_line(url, query, api_key)
             })
 
             if suggested_change then
+                if suggested_change.new_line == DELETE_LINE_STRING then 
+                    suggested_change.new_line = ""
+                    Previous_Query_Data.delete_line = true
+                end
                 Previous_Query_Data.suggested_line = suggested_change.new_line
                 Previous_Query_Data.request_id = request_id
                 Previous_Query_Data.cursor_line = cursor_line
@@ -168,6 +175,7 @@ function Query_via_cmd_line(url, query, api_key)
         end
     )
 
+    -- TODO this probably not useful, need to take a look
     return current_job
 end
 
@@ -212,6 +220,10 @@ local function query_local_model(url, model, query)
             })
 
             if suggested_change then
+                if suggested_change.new_line == DELETE_LINE_STRING then 
+                    suggested_change.new_line = ""
+                    Previous_Query_Data.delete_line = true
+                end
                 Previous_Query_Data.suggested_line = suggested_change.new_line
                 Previous_Query_Data.request_id = request_id
                 Previous_Query_Data.cursor_line = cursor_line

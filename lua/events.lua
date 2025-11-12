@@ -42,7 +42,7 @@ api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
         -- display the suggestion
         -- has to be async
         -- send_query(args.buf)
-        -- Send_Query(args.buf)
+        Send_Query(args.buf)
     end,
 })
 
