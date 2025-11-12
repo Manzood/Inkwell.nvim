@@ -143,9 +143,17 @@ local function render_json_value(value, base_path, indent_level, expanded_state,
                         table.insert(lines, line)
                     end
                     current_line = new_offset
+                    -- Append comma to the last line if there are more items
                     if i < #value then
-                        table.insert(lines, indent_str .. "  ,")
-                        current_line = current_line + 1
+                        local last_line_idx = #lines
+                        if last_line_idx > 0 then
+                            -- Append comma to the last line
+                            lines[last_line_idx] = lines[last_line_idx] .. ","
+                        else
+                            -- Fallback: add comma as new line (shouldn't happen)
+                            table.insert(lines, indent_str .. "  ,")
+                            current_line = current_line + 1
+                        end
                     end
                 end
                 table.insert(lines, indent_str .. " ]")
@@ -233,9 +241,17 @@ local function render_json_value(value, base_path, indent_level, expanded_state,
                         -- But we merged the first line with the key line, so we're actually at new_offset
                         current_line = new_offset
                     end
+                    -- Append comma to the last line if there are more keys
                     if i < #keys then
-                        table.insert(lines, indent_str .. "  ,")
-                        current_line = current_line + 1
+                        local last_line_idx = #lines
+                        if last_line_idx > 0 then
+                            -- Append comma to the last line
+                            lines[last_line_idx] = lines[last_line_idx] .. ","
+                        else
+                            -- Fallback: add comma as new line (shouldn't happen)
+                            table.insert(lines, indent_str .. "  ,")
+                            current_line = current_line + 1
+                        end
                     end
                 end
                 table.insert(lines, indent_str .. " }")
