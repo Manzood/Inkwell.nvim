@@ -23,6 +23,7 @@ OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
 local MODELS = {
     PHI3 = "phi3",
     GPTOSS20B = "openai/gpt-oss-20b",
+    LLAMA3_8B = "llama-3.1-8b-instant",
 }
 
 local PROVIDERS = {
@@ -196,7 +197,8 @@ function Query_via_cmd_line(url, query, api_key)
             logger.log_query({
                 request_id = request_id,
                 url = url,
-                model = MODELS.GPTOSS20B,
+                -- model = MODELS.GPTOSS20B,
+                model = MODELS.LLAMA3_8B,
                 query = query,
                 response = result.stdout,
                 suggested_line = suggested_change.new_line,
@@ -294,7 +296,8 @@ local function query_local_model(url, model, query)
 end
 
 function Query_Groq(content)
-    Query_via_cmd_line(GROQ_URL, Create_Query(MODELS.GPTOSS20B, content), GROQ_API_KEY)
+    -- Query_via_cmd_line(GROQ_URL, Create_Query(MODELS.GPTOSS20B, content), GROQ_API_KEY)
+    Query_via_cmd_line(GROQ_URL, Create_Query(MODELS.LLAMA3_8B, content), GROQ_API_KEY)
 end
 
 function Query_Phi3(content)
