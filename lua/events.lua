@@ -4,6 +4,25 @@ require("apply-change")
 local api = vim.api
 local timer = vim.loop.new_timer()
 
+-- todo make this configurable
+local allowed_filetypes = {
+    "python",
+    "javascript",
+    "typescript",
+    "lua",
+    "rust",
+    "go",
+    "java",
+    "c",
+    "c++",
+    "c#"
+}
+
+local function is_allowed_filetype(bufnr)
+    local filetype = vim.api.nvim_buf_get_option(bufnr, "filetype")
+    return vim.tbl_contains(allowed_filetypes, filetype)
+end
+
 local function debounce(fn, ms)
     return function(...)
         local args = { ... }
@@ -24,9 +43,9 @@ Send_Query = debounce(function(bufnr)
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     local content = table.concat(lines, "\n")
     Current_Request_Id = Current_Request_Id + 1
-    local job_id = Query_Groq(content)
-    -- local job_id = Query_Phi3(content)
-end, 300)
+    -- local job_id = Query_Groq(content)
+    local job_id = Query_Phi3(content)
+end, 1000) -- TODO set something better as the value. It used to be 300ms
 
 -- TODO maybe this will already be created elsewhere
 local group = api.nvim_create_augroup("GhostCursor", { clear = true })
@@ -35,6 +54,10 @@ local group = api.nvim_create_augroup("GhostCursor", { clear = true })
 api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
     group = group,
     callback = function(args)
+        -- TODO consider buffer local autocmds instead of this approach
+        if not is_allowed_filetype(args.buf) then
+            return
+        end
         -- Send_Query(vim.api.nvim_get_current_buf())
         -- You can now cancel pending API queries or debounce new ones here
         -- send current code to AI

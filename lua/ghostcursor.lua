@@ -2,19 +2,32 @@
 
 -- require("query")
 
-require("events")
+-- todo make this configurable
+local allowed_filetypes = {
+    "python",
+    "javascript",
+    "typescript",
+    "lua",
+    "rust",
+    "go",
+    "java",
+    "c",
+    "c++",
+    "c#"
+}
+
+local function is_allowed_filetype(bufnr)
+    local filetype = vim.api.nvim_buf_get_option(bufnr, "filetype")
+    return vim.tbl_contains(allowed_filetypes, filetype)
+end
+
+if is_allowed_filetype(vim.api.nvim_get_current_buf()) then
+    require("events")
+end
 
 local M = {}
 
-M.setup = function()
-    -- nothing
-end
-
 -- USING THE ACTUAL API.
-
--- local response = query_groq(
---     "You are given the following context. Please change only a *single* line of the following context, to predict the next edit to this file. \
---     You may add, delete or simply modify certain parts of the file, as per your choosing. \
 --     If you cannot think of a reasonable change to make, please output nothing. Your context begins here:\n\n" .. context)
 
 -- print("\n\n\n\n" .. response)

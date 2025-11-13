@@ -111,6 +111,10 @@ Parse_Response = function(response, provider)
         return
     end
     if provider == PROVIDERS.GROQ then
+        if not decoded.choices then
+            print("Decoded.choices doesn't exist")
+            print(vim.inspect(decoded))
+        end
         return decoded.choices[1].message.content
     elseif provider == PROVIDERS.OLLAMA then
         return decoded.message.content
@@ -204,7 +208,7 @@ local function query_local_model(url, model, query)
  
             Previous_Query_Data.request_id = request_id
             Previous_Query_Data.response = result.stdout
-            print(Parse_Response(result.stdout, PROVIDERS.OLLAMA))
+            -- print(Parse_Response(result.stdout, PROVIDERS.OLLAMA))
             local suggested_change = vim.json.decode(Parse_Response(result.stdout, PROVIDERS.OLLAMA))
             if not suggested_change or suggested_change.new_line == NO_CHANGE_STRING then return end
 
