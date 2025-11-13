@@ -12,33 +12,39 @@ local allowed_filetypes = {
     "go",
     "java",
     "c",
-    "c++",
-    "c#"
+    "cpp",
+    "cs"
 }
 
-local function is_allowed_filetype(bufnr)
-    local filetype = vim.api.nvim_buf_get_option(bufnr, "filetype")
-    return vim.tbl_contains(allowed_filetypes, filetype)
-end
-
-if is_allowed_filetype(vim.api.nvim_get_current_buf()) then
+local function setup_buffer_autocmds(bufnr) 
+    local ft = vim.api.nvim_buf_get_option(bufnr, "filetype")
+    if not ft or ft == "" then return end
+    if not vim.tbl_contains(allowed_filetypes, ft) then
+        print("Filetype " .. ft .. " is not allowed")
+        return
+    end
     require("events")
 end
 
-local M = {}
+local group = vim.api.nvim_create_augroup("GhostCursorSetup", { clear = true })
 
--- USING THE ACTUAL API.
---     If you cannot think of a reasonable change to make, please output nothing. Your context begins here:\n\n" .. context)
+vim.api.nvim_create_autocmd("Filetype", {
+    group = group,
+    callback = function(args)
+        -- print("Filetype event")
+        setup_buffer_autocmds(vim.api.nvim_get_current_buf())
+    end,
+})
 
--- print("\n\n\n\n" .. response)
+vim.api.nvim_create_autocmd("BufEnter", {
+    group = group,
+    callback = function(args)
+        -- print("BufEnter event")
+        setup_buffer_autocmds(args.buf)
+    end,
+})
 
--- vim.print(parse_buffer {
---     "int main() {",
---     "    int t;",
---     "    cin >> t;",
---     "    cout << t << endl;",
---     "    return 0;",
---     "}",
--- })
+-- DO NOT REMOVE THE LINES BELOW
+M = {}
 
 return M

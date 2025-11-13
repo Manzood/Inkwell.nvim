@@ -47,23 +47,6 @@ api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
     end,
 })
 
--- Have an event for insert enter
--- api.nvim_create_autocmd("InsertEnter", {
---     group = group,
---     callback = function(args)
---         print("InsertEnter in buffer:", args.buf)
---     end,
--- })
-
--- Trigger when leaving insert mode
-api.nvim_create_autocmd("InsertLeave", {
-    group = group,
-    callback = function(args)
-        print("InsertLeave in buffer:", args.buf)
-        -- flush all autocomplete results (but keep suggestions elsewhere maybe?)
-    end,
-})
-
 -- Handle buffer unload or wipeout (cleanup)
 --[[ api.nvim_create_autocmd({ "BufUnload", "BufWipeout" }, {
     group = group,
