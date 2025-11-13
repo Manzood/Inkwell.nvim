@@ -1,3 +1,4 @@
+local mdebug = require("debug-util").debug
 local M = {}
 
 local ns = vim.api.nvim_create_namespace("ghostcursor_display_diff")
@@ -300,6 +301,10 @@ local function show_preview(bufnr, line, updated_line, opts, additions)
     end
 
     local preview_buf = vim.api.nvim_create_buf(false, true)
+    -- if updated line contains newlines
+    if updated_line:find("\n") then
+        mdebug("updated_line contains newlines: ", updated_line)
+    end
     vim.api.nvim_buf_set_lines(preview_buf, 0, -1, false, { updated_line })
     vim.api.nvim_set_option_value("modifiable", false, { buf = preview_buf })
     vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = preview_buf })

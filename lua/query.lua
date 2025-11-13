@@ -5,6 +5,7 @@ local display_diff = require("display-diff")
 local project_markers = { ".git", "package.json", "pyproject.toml", ".editorconfig", ".project_root", ".env" }
 local project_root = vim.fs.root(0, project_markers)
 local logger = require("logger")
+local mdebug = require("debug-util").debug
 require("query-data")
 
 local plugin_root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:match("@(.*)"), ":h:h")
@@ -30,8 +31,9 @@ local PROVIDERS = {
     OLLAMA = "ollama",
 }
 
-NO_CHANGE_STRING = "<NO_CHANGE_STRING>" -- TODO make this something more obscure. But also something a language model won't struggle to output correctly.
-                        -- alternative: have a specific output when it comes to deleting lines. And an empty output means no change.
+NO_CHANGE_STRING =
+"<NO_CHANGE_STRING>" -- TODO make this something more obscure. But also something a language model won't struggle to output correctly.
+-- alternative: have a specific output when it comes to deleting lines. And an empty output means no change.
 DELETE_LINE_STRING = "<DELETE_LINE_STRING>"
 
 local API_AGENT_PROMPT = [[
@@ -102,22 +104,55 @@ function Create_Query(model, content)
     return vim.fn.json_encode(payload)
 end
 
+local function sanitize_message(message)
+    -- parse message to find the first line that contains the word new_line
+    -- remove all lines before that line
+    local lines = vim.split(message, "\n")
+    local ret = message
+    for i, line in ipairs(lines) do
+        if line:find("new_line") then
+            -- if the previous line contains only an open bracket, include that in the return value
+            -- if i > 1 then mdebug("ret: ", ret, "\nprinting lines: ", lines[i - 1], "\nother:\n", lines[i]) end
+            if lines[i - 1] and lines[i - 1]:find("^%s*{") then
+                ret = lines[i - 1] .. "\n" .. table.concat(lines, "\n", i, #lines)
+            end
+            ret = table.concat(lines, "\n", i, #lines)
+        end
+    end
+    -- TODO if nothing contained new_line, the output format was wrong
+
+    mdebug("ret: ", ret, "ret.sub(1, 1): ", ret.sub(1, 1), "ret.sub(-1, -1): ", ret.sub(-1, -1))
+    if ret:sub(1, 1) == "`" then
+        mdebug(ret)
+        ret = ret:sub(2, -2)
+        mdebug(ret)
+    end
+    if ret:sub(-1, -1) == "`" then
+        ret = ret:sub(1, -2)
+    end
+    return message
+end
+
+local function verify_message_format(message)
+
+end
+
 Parse_Response = function(response, provider)
     -- add check to see if it was decoded successfully
     local decoded, err = vim.json.decode(response)
     if err then
-        print("Error decoding response: " .. vim.inspect(err))
-        print("Response: " .. response)
+        mdebug("Error decoding response: " .. vim.inspect(err))
+        mdebug("Response: " .. response)
         return
     end
     if provider == PROVIDERS.GROQ then
         if not decoded.choices then
-            print("Decoded.choices doesn't exist")
-            print(vim.inspect(decoded))
+            mdebug("Decoded.choices doesn't exist")
+            mdebug(vim.inspect(decoded))
         end
-        return decoded.choices[1].message.content
+        return sanitize_message(decoded.choices[1].message.content)
     elseif provider == PROVIDERS.OLLAMA then
-        return decoded.message.content
+        return sanitize_message(decoded.message.content)
     end
 end
 
@@ -141,14 +176,21 @@ function Query_via_cmd_line(url, query, api_key)
         function(result)
             -- Ignore if buffer changed since this request started
             if request_id ~= Current_Request_Id then
-                print("Ignoring stale response.")
+                mdebug("Ignoring stale response.")
                 return
             end
 
             Previous_Query_Data.request_id = Current_Request_Id
             Previous_Query_Data.response = result.stdout
-            print("GROQ Response: " .. Parse_Response(result.stdout, PROVIDERS.GROQ))
-            local suggested_change = vim.json.decode(Parse_Response(result.stdout, PROVIDERS.GROQ))
+            mdebug("GROQ Response: " .. Parse_Response(result.stdout, PROVIDERS.GROQ))
+            -- local suggested_change = vim.json.decode(Parse_Response(result.stdout, PROVIDERS.GROQ))
+            local ok, suggested_change = pcall(function()
+                return vim.json.decode(Parse_Response(result.stdout, PROVIDERS.GROQ))
+            end)
+            if not ok then
+                mdebug("Error decoding response: " .. vim.inspect(err))
+                return
+            end
             if not suggested_change or suggested_change.new_line == NO_CHANGE_STRING then return end
 
             logger.log_query({
@@ -163,7 +205,7 @@ function Query_via_cmd_line(url, query, api_key)
             })
 
             if suggested_change then
-                if suggested_change.new_line == DELETE_LINE_STRING then 
+                if suggested_change.new_line == DELETE_LINE_STRING then
                     suggested_change.new_line = ""
                     Previous_Query_Data.delete_line = true
                 end
@@ -202,14 +244,22 @@ local function query_local_model(url, model, query)
         { text = true },
         function(result)
             if result.code ~= 0 then
-                print("Ollama query failed:", result.stderr)
+                mdebug("Ollama query failed:", result.stderr)
                 return
             end
- 
+
             Previous_Query_Data.request_id = request_id
             Previous_Query_Data.response = result.stdout
-            -- print(Parse_Response(result.stdout, PROVIDERS.OLLAMA))
-            local suggested_change = vim.json.decode(Parse_Response(result.stdout, PROVIDERS.OLLAMA))
+            mdebug("parsing done: " .. Parse_Response(result.stdout, PROVIDERS.OLLAMA))
+            -- local suggested_change = vim.json.decode(Parse_Response(result.stdout, PROVIDERS.OLLAMA))
+            local ok, suggested_change = pcall(function()
+                return vim.json.decode(Parse_Response(result.stdout, PROVIDERS.OLLAMA))
+            end)
+            mdebug("ok: ", ok, "suggested_change: ", suggested_change)
+            if not ok then
+                mdebug("Error decoding response: " .. vim.inspect(err))
+                return
+            end
             if not suggested_change or suggested_change.new_line == NO_CHANGE_STRING then return end
 
             logger.log_query({
@@ -224,7 +274,7 @@ local function query_local_model(url, model, query)
             })
 
             if suggested_change then
-                if suggested_change.new_line == DELETE_LINE_STRING then 
+                if suggested_change.new_line == DELETE_LINE_STRING then
                     suggested_change.new_line = ""
                     Previous_Query_Data.delete_line = true
                 end

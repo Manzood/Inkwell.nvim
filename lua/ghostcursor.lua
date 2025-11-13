@@ -1,7 +1,3 @@
--- print "loaded ghostcursor.nvim"
-
--- require("query")
-
 -- todo make this configurable
 local allowed_filetypes = {
     "python",
@@ -20,7 +16,6 @@ local function setup_buffer_autocmds(bufnr)
     local ft = vim.api.nvim_buf_get_option(bufnr, "filetype")
     if not ft or ft == "" then return end
     if not vim.tbl_contains(allowed_filetypes, ft) then
-        print("Filetype " .. ft .. " is not allowed")
         return
     end
     require("events")

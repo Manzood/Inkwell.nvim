@@ -769,10 +769,27 @@ function M.open()
     vim.api.nvim_buf_set_option(bufnr, "filetype", "ghostcursor-logs")
 end
 
+-- Purge the log file (delete all entries)
+function M.purge()
+    local log_path = get_log_path()
+    local file = io.open(log_path, "w")
+    if file then
+        file:close()
+        vim.notify("GhostCursor log file purged successfully", vim.log.levels.INFO)
+    else
+        vim.notify("Failed to purge log file: " .. log_path, vim.log.levels.ERROR)
+    end
+end
+
 -- Create command
 vim.api.nvim_create_user_command("GhostCursorLogs", function()
     M.open()
 end, { desc = "Open GhostCursor query log viewer" })
+
+-- Create purge command
+vim.api.nvim_create_user_command("GhostCursorLogsPurge", function()
+    M.purge()
+end, { desc = "Purge all entries from GhostCursor log file" })
 
 return M
 

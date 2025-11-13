@@ -3,7 +3,7 @@ require("apply-change")
 
 local api = vim.api
 local timer = vim.loop.new_timer()
-
+local mdebug = require("debug-util").debug
 
 local function debounce(fn, ms)
     return function(...)
@@ -25,16 +25,18 @@ Send_Query = debounce(function(bufnr)
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     local content = table.concat(lines, "\n")
     Current_Request_Id = Current_Request_Id + 1
-    -- local job_id = Query_Groq(content)
-    local job_id = Query_Phi3(content)
+    local job_id = Query_Groq(content)
+    -- local job_id = Query_Phi3(content)
 end, 1000) -- TODO set something better as the value. It used to be 300ms
 
 -- TODO maybe this will already be created elsewhere
 local group = api.nvim_create_augroup("GhostCursor", { clear = true })
+local bufnr = api.nvim_get_current_buf()
 
 -- TODO double check what TextChangedI is
 api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
     group = group,
+    buffer = bufnr,
     callback = function(args)
         -- Send_Query(vim.api.nvim_get_current_buf())
         -- You can now cancel pending API queries or debounce new ones here
@@ -47,11 +49,13 @@ api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
     end,
 })
 
+-- TODO check what happens when a buffer is closed before the async request is finished
+-- it hasn't caused any issues so far in my testing though
 -- Handle buffer unload or wipeout (cleanup)
 --[[ api.nvim_create_autocmd({ "BufUnload", "BufWipeout" }, {
     group = group,
     callback = function(args)
-        print("Buffer unloaded:", args.buf)
+        mdebug("Buffer unloaded:", args.buf)
         -- Cancel running async requests, free resources, etc.
     end,
 }) ]]
