@@ -1,12 +1,12 @@
 local mdebug = require("debug-util").debug
 local M = {}
 
-local ns = vim.api.nvim_create_namespace("ghostcursor_display_diff")
+local ns = vim.api.nvim_create_namespace("inkwell_display_diff")
 
 local default_highlights = {
-    add = "GhostcursorGhostText",
-    delete = "GhostcursorDiffDelete",
-    preview = "GhostcursorDiffPreview",
+    add = "InkWellGhostText",
+    delete = "InkWellDiffDelete",
+    preview = "InkWellDiffPreview",
 }
 
 local highlight_initialized = false
@@ -29,7 +29,7 @@ local presets = {
             border = "rounded",
             padding = 2,
             row_offset = -1,
-            hl_group = "GhostcursorPreviewSerene",
+            hl_group = "InkWellPreviewSerene",
             highlight = {
                 fg = "#bac8ff",
                 bg = "#1f2335",
@@ -42,7 +42,7 @@ local presets = {
             border = "single",
             padding = 1,
             row_offset = -1,
-            hl_group = "GhostcursorPreviewNeon",
+            hl_group = "InkWellPreviewNeon",
             highlight = {
                 fg = "#00f1ff",
                 bg = "#121212",
@@ -55,7 +55,7 @@ local presets = {
             border = "none",
             padding = 1,
             row_offset = 0,
-            hl_group = "GhostcursorPreviewDusk",
+            hl_group = "InkWellPreviewDusk",
             highlight = {
                 fg = "#f5d7b5",
                 bg = "#221b29",
@@ -67,7 +67,7 @@ local presets = {
             border = "none",
             padding = 1,
             row_offset = 0,
-            hl_group = "GhostcursorPreviewMinimal",
+            hl_group = "InkWellPreviewMinimal",
             highlight = {
                 fg = "#c8d0e0",
                 bg = "#1b1d23",
@@ -79,20 +79,20 @@ local presets = {
             border = "rounded",
             padding = 0,
             row_offset = -1,
-            hl_group = "GhostcursorPreviewCompact",
+            hl_group = "InkWellPreviewCompact",
             highlight = {
                 fg = "#b0c4de",
                 bg = "#1f2430",
             },
             winhl = {
-                NormalFloat = "GhostcursorPreviewCompactFloat",
-                FloatBorder = "GhostcursorPreviewCompactBorder",
+                NormalFloat = "InkWellPreviewCompactFloat",
+                FloatBorder = "InkWellPreviewCompactBorder",
             },
             winhl_highlights = {
-                GhostcursorPreviewCompactFloat = {
+                InkWellPreviewCompactFloat = {
                     bg = "#1f2430",
                 },
-                GhostcursorPreviewCompactBorder = {
+                InkWellPreviewCompactBorder = {
                     fg = "#2c3742",
                     bg = "#1f2430",
                 },
@@ -104,20 +104,20 @@ local presets = {
             border = "single",
             padding = 0,
             row_offset = -1,
-            hl_group = "GhostcursorPreviewSlimText",
+            hl_group = "InkWellPreviewSlimText",
             highlight = {
                 fg = "#67e8f9",
                 bg = "#10131b",
             },
             winhl = {
-                NormalFloat = "GhostcursorPreviewSlimFloat",
-                FloatBorder = "GhostcursorPreviewSlimBorder",
+                NormalFloat = "InkWellPreviewSlimFloat",
+                FloatBorder = "InkWellPreviewSlimBorder",
             },
             winhl_highlights = {
-                GhostcursorPreviewSlimFloat = {
+                InkWellPreviewSlimFloat = {
                     bg = "#10131b",
                 },
-                GhostcursorPreviewSlimBorder = {
+                InkWellPreviewSlimBorder = {
                     fg = "#1d222e",
                     bg = "#10131b",
                 },
@@ -129,7 +129,7 @@ local presets = {
             border = "double",
             padding = 1,
             row_offset = -1,
-            hl_group = "GhostcursorPreviewAurora",
+            hl_group = "InkWellPreviewAurora",
             highlight = {
                 fg = "#9ce5ff",
                 bg = "#11212f",
@@ -619,7 +619,7 @@ end
 vim.keymap.set("n", "<leader>dd", function()
     local cursor_line = vim.api.nvim_win_get_cursor(0)[1] - 1
     M.display_diff(cursor_line, "Hello world")
-end, { noremap = true, silent = true, desc = "Ghostcursor: inline diff test" })
+end, { noremap = true, silent = true, desc = "InkWell: inline diff test" })
 
 
 return M

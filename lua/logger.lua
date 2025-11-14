@@ -9,7 +9,7 @@ local query_log = {
 -- Get log file path
 local function get_log_path()
     local data_dir = vim.fn.stdpath("data")
-    local log_dir = data_dir .. "/ghostcursor/log"
+    local log_dir = data_dir .. "/inkwell/log"
     -- Ensure directory exists
     vim.fn.mkdir(log_dir, "p")
     return log_dir .. "/query_log.jsonl"

@@ -8,7 +8,7 @@ end
 -- vim.keymap.set("n", "<leader>dd", function()
 --     local cursor_line = vim.api.nvim_win_get_cursor(0)[1] - 1
 --     M.display_diff(cursor_line, "Hello world")
--- end, { noremap = true, silent = true, desc = "Ghostcursor: inline diff test" })
+-- end, { noremap = true, silent = true, desc = "InkWell: inline diff test" })
 
 function Apply_Suggested_Change()
     -- print(vim.inspect(Previous_Query_Data))

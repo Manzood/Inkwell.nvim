@@ -30,7 +30,7 @@ Send_Query = debounce(function(bufnr)
 end, 200) -- TODO set something better as the value. It used to be 300ms
 
 -- TODO maybe this will already be created elsewhere
-local group = api.nvim_create_augroup("GhostCursor", { clear = true })
+local group = api.nvim_create_augroup("InkWell", { clear = true })
 local bufnr = api.nvim_get_current_buf()
 
 -- TODO double check what TextChangedI is

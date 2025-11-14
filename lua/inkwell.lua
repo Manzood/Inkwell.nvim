@@ -21,7 +21,7 @@ local function setup_buffer_autocmds(bufnr)
     require("events")
 end
 
-local group = vim.api.nvim_create_augroup("GhostCursorSetup", { clear = true })
+local group = vim.api.nvim_create_augroup("InkWellSetup", { clear = true })
 
 vim.api.nvim_create_autocmd("Filetype", {
     group = group,

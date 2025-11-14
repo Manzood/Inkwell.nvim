@@ -1,4 +1,4 @@
--- Log viewer for GhostCursor query logs
+-- Log viewer for InkWell query logs
 -- Displays logs in a structured, expandable tree format
 
 local M = {}
@@ -6,7 +6,7 @@ local M = {}
 -- Get log file path (same logic as logger.lua)
 local function get_log_path()
     local data_dir = vim.fn.stdpath("data")
-    local log_dir = data_dir .. "/ghostcursor/log"
+    local log_dir = data_dir .. "/inkwell/log"
     return log_dir .. "/query_log.jsonl"
 end
 
@@ -404,7 +404,7 @@ local function render_buffer(bufnr, entries, expanded_state, line_to_path)
     local lines = {}
     
     -- Header
-    table.insert(lines, "GhostCursor Query Logs")
+    table.insert(lines, "InkWell Query Logs")
     table.insert(lines, "Entries: " .. #entries)
     table.insert(lines, "Last updated: " .. os.date("%Y-%m-%d %H:%M:%S"))
     table.insert(lines, "")
@@ -659,7 +659,7 @@ function M.open()
     for _, buf in ipairs(vim.api.nvim_list_bufs()) do
         if vim.api.nvim_buf_is_valid(buf) then
             local buf_name = vim.api.nvim_buf_get_name(buf)
-            if buf_name == "GhostCursor Logs" or buf_name:match("GhostCursor Logs") then
+            if buf_name == "InkWell Logs" or buf_name:match("InkWell Logs") then
                 existing_bufnr = buf
                 -- Close any windows showing this buffer
                 for _, win in ipairs(vim.api.nvim_list_wins()) do
@@ -678,7 +678,7 @@ function M.open()
     
     -- Create buffer with unique name
     local bufnr = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_name(bufnr, "GhostCursor Logs")
+    vim.api.nvim_buf_set_name(bufnr, "InkWell Logs")
     vim.api.nvim_buf_set_option(bufnr, "buftype", "nofile")
     vim.api.nvim_buf_set_option(bufnr, "bufhidden", "wipe")
     
@@ -766,7 +766,7 @@ function M.open()
     vim.api.nvim_buf_set_keymap(bufnr, "n", "o", "", { callback = expand_toggle, silent = true })
     
     -- Set filetype for syntax highlighting
-    vim.api.nvim_buf_set_option(bufnr, "filetype", "ghostcursor-logs")
+    vim.api.nvim_buf_set_option(bufnr, "filetype", "inkwell-logs")
 end
 
 -- Purge the log file (delete all entries)
@@ -775,21 +775,21 @@ function M.purge()
     local file = io.open(log_path, "w")
     if file then
         file:close()
-        vim.notify("GhostCursor log file purged successfully", vim.log.levels.INFO)
+        vim.notify("InkWell log file purged successfully", vim.log.levels.INFO)
     else
         vim.notify("Failed to purge log file: " .. log_path, vim.log.levels.ERROR)
     end
 end
 
 -- Create command
-vim.api.nvim_create_user_command("GhostCursorLogs", function()
+vim.api.nvim_create_user_command("InkWellLogs", function()
     M.open()
-end, { desc = "Open GhostCursor query log viewer" })
+end, { desc = "Open InkWell query log viewer" })
 
 -- Create purge command
-vim.api.nvim_create_user_command("GhostCursorLogsPurge", function()
+vim.api.nvim_create_user_command("InkWellLogsPurge", function()
     M.purge()
-end, { desc = "Purge all entries from GhostCursor log file" })
+end, { desc = "Purge all entries from InkWell log file" })
 
 return M
 

@@ -296,8 +296,8 @@ local function query_local_model(url, model, query)
 end
 
 function Query_Groq(content)
-    -- Query_via_cmd_line(GROQ_URL, Create_Query(MODELS.GPTOSS20B, content), GROQ_API_KEY)
-    Query_via_cmd_line(GROQ_URL, Create_Query(MODELS.LLAMA3_8B, content), GROQ_API_KEY)
+    Query_via_cmd_line(GROQ_URL, Create_Query(MODELS.GPTOSS20B, content), GROQ_API_KEY)
+    -- Query_via_cmd_line(GROQ_URL, Create_Query(MODELS.LLAMA3_8B, content), GROQ_API_KEY)
 end
 
 function Query_Phi3(content)
