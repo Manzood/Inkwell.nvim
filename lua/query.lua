@@ -2,6 +2,7 @@
 -- local json = vim.fn.json_encode
 local env = require "env"
 local display_diff = require("display-diff")
+local my_display = require("my-display")
 local project_markers = { ".git", "package.json", "pyproject.toml", ".editorconfig", ".project_root", ".env" }
 local project_root = vim.fs.root(0, project_markers)
 local logger = require("logger")
@@ -122,7 +123,7 @@ local function sanitize_message(message)
     end
     -- TODO if nothing contained new_line, the output format was wrong
 
-    mdebug("ret: ", ret, "ret.sub(1, 1): ", ret.sub(1, 1), "ret.sub(-1, -1): ", ret.sub(-1, -1))
+    -- mdebug("ret: ", ret, "ret.sub(1, 1): ", ret.sub(1, 1), "ret.sub(-1, -1): ", ret.sub(-1, -1))
     if ret:sub(1, 1) == "`" then
         mdebug(ret)
         ret = ret:sub(2, -2)
@@ -157,7 +158,8 @@ Parse_Response = function(response, provider)
     end
 end
 
-function Query_via_cmd_line(url, query, api_key)
+function Query_via_cmd_line(url, model, content, api_key)
+    local query = Create_Query(model, content)
     local request_id = Current_Request_Id
     local command = { "curl", "-s",
         "-X", "POST", url,
@@ -197,8 +199,7 @@ function Query_via_cmd_line(url, query, api_key)
             logger.log_query({
                 request_id = request_id,
                 url = url,
-                -- model = MODELS.GPTOSS20B,
-                model = MODELS.LLAMA3_8B,
+                model = model,
                 query = query,
                 response = result.stdout,
                 suggested_line = suggested_change.new_line,
@@ -217,7 +218,9 @@ function Query_via_cmd_line(url, query, api_key)
                 Previous_Query_Data.used = false
                 Previous_Query_Data.valid_change = true
                 vim.schedule(function()
-                    display_diff.display_diff(cursor_line, suggested_change.new_line)
+                    my_display.display_diff(cursor_line, "Hi, this is a test string\n");
+                    -- my_display.calculate_diff(cursor_line, suggested_change.new_line)
+                    -- display_diff.display_diff(cursor_line, suggested_change.new_line)
                 end)
             end
         end
@@ -296,8 +299,8 @@ local function query_local_model(url, model, query)
 end
 
 function Query_Groq(content)
-    Query_via_cmd_line(GROQ_URL, Create_Query(MODELS.GPTOSS20B, content), GROQ_API_KEY)
-    -- Query_via_cmd_line(GROQ_URL, Create_Query(MODELS.LLAMA3_8B, content), GROQ_API_KEY)
+    Query_via_cmd_line(GROQ_URL, MODELS.GPTOSS20B, content, GROQ_API_KEY)
+    -- Query_via_cmd_line(GROQ_URL, MODELS.LLAMA3_8B, content, GROQ_API_KEY)
 end
 
 function Query_Phi3(content)

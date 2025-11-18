@@ -27,9 +27,11 @@ vim.api.nvim_create_autocmd("Filetype", {
     group = group,
     callback = function(args)
         -- print("Filetype event")
-        setup_buffer_autocmds(vim.api.nvim_get_current_buf())
+        -- setup_buffer_autocmds(vim.api.nvim_get_current_buf())
     end,
 })
+
+setup_buffer_autocmds(vim.api.nvim_get_current_buf())
 
 vim.api.nvim_create_autocmd("BufEnter", {
     group = group,

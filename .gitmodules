@@ -1,0 +1,3 @@
+[submodule "lua/diff_match_patch"]
+	path = lua/diff_match_patch
+	url = https://github.com/google/diff-match-patch

@@ -25,8 +25,8 @@ Send_Query = debounce(function(bufnr)
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     local content = table.concat(lines, "\n")
     Current_Request_Id = Current_Request_Id + 1
-    -- local job_id = Query_Groq(content)
-    local job_id = Query_Phi3(content)
+    local job_id = Query_Groq(content)
+    -- local job_id = Query_Phi3(content)
 end, 200) -- TODO set something better as the value. It used to be 300ms
 
 -- TODO maybe this will already be created elsewhere
