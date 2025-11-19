@@ -1,4 +1,5 @@
 local display_diff = require("display-diff")
+local my_display = require("my-display")
 
 -- function to replace a specific line in the buffer with the new line content
 local function replace(line_nr, new_line_content) 
@@ -22,7 +23,8 @@ function Apply_Suggested_Change()
             replace(Previous_Query_Data.cursor_line, Previous_Query_Data.suggested_line)
         end
         -- remove all existing suggestions
-        display_diff.clear({ bufnr = vim.api.nvim_get_current_buf() })
+        -- display_diff.clear({ bufnr = vim.api.nvim_get_current_buf() })
+        my_display.clear({ bufnr = vim.api.nvim_get_current_buf() })
         Suggestion_Just_Accepted = true
     end
 end

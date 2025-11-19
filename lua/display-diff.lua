@@ -230,7 +230,6 @@ local function to_chars(str)
     return chars
 end
 
--- TODO cross check if this is necessary
 local function ensure_preview_table(bufnr)
     preview_state[bufnr] = preview_state[bufnr] or {}
     return preview_state[bufnr]
@@ -321,7 +320,7 @@ local function show_preview(bufnr, line, updated_line, opts, additions)
         local virt = vim.fn.virtcol({ line + 1, "$" })
         local info = vim.fn.getwininfo(win)[1] or {}
         local textoff = info.textoff or 0
-        ghost_col = math.max(0, (virt > 0 and virt - 1 or 0) + textoff)
+        ghost_col = math.max(0, (virt > 0 and virt - 1 or 0) + textoff) 
     end)
 
     local configured_border = config.preview.border

@@ -218,7 +218,7 @@ function Query_via_cmd_line(url, model, content, api_key)
                 Previous_Query_Data.used = false
                 Previous_Query_Data.valid_change = true
                 vim.schedule(function()
-                    my_display.display_diff(cursor_line, "Hi, this is a test string\n");
+                    my_display.display_diff(cursor_line, suggested_change.new_line);
                     -- my_display.calculate_diff(cursor_line, suggested_change.new_line)
                     -- display_diff.display_diff(cursor_line, suggested_change.new_line)
                 end)
