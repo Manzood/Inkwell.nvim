@@ -2,7 +2,7 @@
 Previous_Query_Data = {
     request_id = 0,
     response = "",
-    suggested_line = "",
+    suggested_changes = {},
     cursor_line = 0,
     used = false,
     valid_change = false,

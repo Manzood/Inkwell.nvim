@@ -252,6 +252,72 @@ end
 -- 2) only deletions: just make whatever needs to go red
 -- 3) both. Make deletions read, and have a floating box to the side that shows what will replace it (with additions marked in green)
 -- TODO we're not using the options just yet. Although we probably should if the user switches to another buffer by the time the code completion shows up
+M.display_single_line_diff = function (cursor_line, new_content, opts)
+    opts = opts or {}
+    local bufnr = resolve_bufnr(opts)
+
+    diff_highlights.ensure_highlights()
+    M.clear({ bufnr = bufnr })
+
+    local diff = M.get_diff(cursor_line, new_content[1])
+    local iter1 = 1
+    local iter2 = 1
+    local red_positions = {}
+    local green_positions = {}
+
+    for _, diff in ipairs(diff) do
+        if diff[1] == 0 then
+            iter1 = iter1 + #diff[2]
+            iter2 = iter2 + #diff[2]
+        elseif diff[1] == 1 then
+            -- display as green in pop up box
+            table.insert(green_positions, {iter2, iter2 + #diff[2]})
+            iter2 = iter2 + #diff[2]
+        elseif diff[1] == -1 then
+            -- display as red on current line
+            table.insert(red_positions, {iter1, iter1 + #diff[2]})
+            iter1 = iter1 + #diff[2]
+        end
+    end
+
+    local current_line = vim.api.nvim_buf_get_lines(0, cursor_line, cursor_line + 1, false)[1]
+
+    if #green_positions == 0 then 
+        for _, pos in ipairs(red_positions) do
+            vim.api.nvim_buf_set_extmark(0, ns, cursor_line, pos[1] - 1, {
+                end_row = cursor_line,
+                end_col = math.min(#current_line, pos[2] - 1), 
+                hl_group = "InkWellDiffDelete",
+                hl_eol = false,
+                priority = 1000,
+            })
+        end
+    elseif #red_positions == 0 then
+        -- write the additive stuff as ghost text
+        for _, pos in ipairs(green_positions) do
+            vim.api.nvim_buf_set_extmark(0, ns, cursor_line, math.min(#current_line, pos[1]), {
+                virt_text = {{new_content[1]:sub(pos[1], pos[2]), "InkWellDiffAdd"}}, -- TODO need a better floating text highlight group
+                virt_text_pos = "inline",
+                priority = 1000,
+                right_gravity = false,
+                virt_text_hide = false -- TODO what is this and why is it necessary
+            })
+        end
+    else
+        -- both
+        for _, pos in ipairs(red_positions) do
+            vim.api.nvim_buf_set_extmark(0, ns, cursor_line, pos[1] - 1, {
+                end_row = cursor_line,
+                end_col = math.min(#current_line, pos[2] - 1), 
+                hl_group = "InkWellDiffDelete",
+                hl_eol = false,
+                priority = 1000,
+            })
+        end
+        show_preview(bufnr, cursor_line, new_content[1], opts, green_positions)
+    end
+end
+
 M.display_diff = function (cursor_line, new_content, opts)
     opts = opts or {}
     local bufnr = resolve_bufnr(opts)
@@ -316,17 +382,6 @@ M.display_diff = function (cursor_line, new_content, opts)
         end
         show_preview(bufnr, cursor_line, new_content, opts, green_positions)
     end
-
-    -- need a pop up box first
-    -- for start_pos, end_pos in ipairs(green_positions) do
-    --     vim.api.nvim_buf_set_extmark(0, ns, cursor_line, start_pos, {
-    --         end_row = cursor_line,
-    --         end_col = end_pos,
-    --         hl_group = "InkWellDiffAdd",
-    --         hl_eol = false,
-    --         priority = 1000,
-    --     })
-    -- end
 end
 
 return M
