@@ -7,14 +7,14 @@ M.ignore_whitespace = false
 --- in my-display.lua or a setup/init file
 
 if not bit32 and bit then
-  bit32 = {
-    band  = bit.band,
-    bor   = bit.bor,
-    bxor  = bit.bxor,
-    bnot  = bit.bnot,
-    lshift = bit.lshift,
-    rshift = bit.rshift,
-  }
+    bit32 = {
+        band   = bit.band,
+        bor    = bit.bor,
+        bxor   = bit.bxor,
+        bnot   = bit.bnot,
+        lshift = bit.lshift,
+        rshift = bit.rshift,
+    }
 end
 
 local dmp = require("diff_match_patch")
@@ -136,7 +136,7 @@ local function compute_window_row(win, line)
     return row
 end
 
-local function show_preview(bufnr, line, updated_line, opts, additions)
+local function show_single_line_preview(bufnr, line, updated_line, opts, additions)
     local store = ensure_preview_table(bufnr)
     close_preview(bufnr, line)
 
@@ -234,7 +234,8 @@ local function show_preview(bufnr, line, updated_line, opts, additions)
         end
     end
 
-    local preview_hl = (opts and opts.preview_hl) or diff_highlights.config.preview.hl_group or diff_highlights.default_highlights.preview
+    local preview_hl = (opts and opts.preview_hl) or diff_highlights.config.preview.hl_group or
+    diff_highlights.default_highlights.preview
 
     -- TODO if preview_hl is not set by this point we have a problem
     if preview_hl then
@@ -269,12 +270,98 @@ M.clear = function(opts)
     end
 end
 
+local function show_preview(bufnr, patch, opts, additions)
+    opts = opts or {}
+    local api = vim.api
+    local ns = ns
+
+    -- Prepare patch lines
+    local lines = patch and patch.new_lines or {}
+    if type(lines) == "string" then
+        lines = vim.split(lines, "\n")
+    end
+    if not lines or #lines == 0 then
+        return
+    end
+
+    -- Create preview buffer
+    local preview_buf = api.nvim_create_buf(false, true)
+    api.nvim_buf_set_option(preview_buf, "buftype", "nofile")
+    api.nvim_buf_set_option(preview_buf, "bufhidden", "wipe")
+    api.nvim_buf_set_option(preview_buf, "modifiable", true)
+    api.nvim_buf_set_option(preview_buf, "filetype", api.nvim_buf_get_option(0, "filetype"))
+
+    api.nvim_buf_set_lines(preview_buf, 0, -1, false, lines)
+    api.nvim_buf_set_option(preview_buf, "modifiable", false)
+
+    -- Calculate floating window dimensions
+    local width = 0
+    for _, l in ipairs(lines) do
+        width = math.max(width, vim.fn.strdisplaywidth(l or ""))
+    end
+    local height = #lines
+    width = math.max(width, 10)
+    height = math.max(height, 1)
+
+    -- Try to position to the right of main buffer, middle of the displayed area
+    local row = math.max(2, math.floor(vim.o.lines / 2 - height / 2))
+    local col = math.max(5, math.floor(vim.o.columns / 2 - width / 2))
+
+    local preview_win = api.nvim_open_win(preview_buf, false, {
+        relative = "editor",
+        anchor = "NW",
+        width = width,
+        height = height,
+        row = row,
+        col = col,
+        style = "minimal",
+        border = "rounded",
+        noautocmd = true,
+        focusable = false,
+    })
+
+    -- Optionally highlight window
+    if opts.preview_winhl or diff_highlights and diff_highlights.config and diff_highlights.config.preview and diff_highlights.config.preview.winhl then
+        local winhl_str = opts.preview_winhl or diff_highlights.config.preview.winhl
+        if winhl_str and winhl_str ~= "" then
+            pcall(vim.api.nvim_set_option_value, "winhl", winhl_str, { win = preview_win })
+        end
+    end
+
+    -- Highlight additions (green) in the preview buffer
+    local preview_hl = (opts and opts.preview_hl) or
+    (diff_highlights and diff_highlights.config and diff_highlights.config.preview and diff_highlights.config.preview.hl_group) or
+    (diff_highlights and diff_highlights.default_highlights and diff_highlights.default_highlights.preview) or "DiffAdd"
+
+    -- `additions` is an array of {line_idx, start_col, end_col} (1-indexed!)
+    if preview_hl and additions then
+        for _, seg in ipairs(additions) do
+            local line_idx = seg[1]
+            local start_col = seg[2]
+            local end_col = seg[3]
+            -- Defensive: adjust for 1-based to 0-based indexing
+            if lines[line_idx] then
+                api.nvim_buf_add_highlight(preview_buf, ns, preview_hl, line_idx - 1, start_col - 1, end_col - 1)
+            end
+        end
+    end
+
+    -- State keeping so we can later clear this preview if needed
+    preview_state = preview_state or {}
+    preview_state[bufnr] = preview_state[bufnr] or {}
+    local line = opts.line or 0
+    preview_state[bufnr][line] = {
+        win = preview_win,
+        buf = preview_buf,
+    }
+end
+
 -- three cases
 -- 1) only additive changes: Simple ghost text should do
 -- 2) only deletions: just make whatever needs to go red
 -- 3) both. Make deletions read, and have a floating box to the side that shows what will replace it (with additions marked in green)
 -- TODO we're not using the options just yet. Although we probably should if the user switches to another buffer by the time the code completion shows up
-M.display_single_line_diff = function (cursor_line, new_content, opts)
+M.display_single_line_diff = function(cursor_line, new_content, opts)
     opts = opts or {}
     local bufnr = resolve_bufnr(opts)
 
@@ -293,22 +380,22 @@ M.display_single_line_diff = function (cursor_line, new_content, opts)
             iter2 = iter2 + #diff[2]
         elseif diff[1] == 1 then
             -- display as green in pop up box
-            table.insert(green_positions, {iter2, iter2 + #diff[2]})
+            table.insert(green_positions, { iter2, iter2 + #diff[2] })
             iter2 = iter2 + #diff[2]
         elseif diff[1] == -1 then
             -- display as red on current line
-            table.insert(red_positions, {iter1, iter1 + #diff[2]})
+            table.insert(red_positions, { iter1, iter1 + #diff[2] })
             iter1 = iter1 + #diff[2]
         end
     end
 
     local current_line = vim.api.nvim_buf_get_lines(0, cursor_line, cursor_line + 1, false)[1]
 
-    if #green_positions == 0 then 
+    if #green_positions == 0 then
         for _, pos in ipairs(red_positions) do
             vim.api.nvim_buf_set_extmark(0, ns, cursor_line, pos[1] - 1, {
                 end_row = cursor_line,
-                end_col = math.min(#current_line, pos[2] - 1), 
+                end_col = math.min(#current_line, pos[2] - 1),
                 hl_group = "InkWellDiffDelete",
                 hl_eol = false,
                 priority = 1000,
@@ -318,7 +405,7 @@ M.display_single_line_diff = function (cursor_line, new_content, opts)
         -- write the additive stuff as ghost text
         for _, pos in ipairs(green_positions) do
             vim.api.nvim_buf_set_extmark(0, ns, cursor_line, math.min(#current_line, pos[1] - 1), {
-                virt_text = {{new_content[1]:sub(pos[1], pos[2] - 1), "InkWellDiffAdd"}}, -- TODO need a better floating text highlight group
+                virt_text = { { new_content[1]:sub(pos[1], pos[2] - 1), "InkWellDiffAdd" } }, -- TODO need a better floating text highlight group
                 virt_text_pos = "inline",
                 priority = 1000,
                 right_gravity = false,
@@ -330,13 +417,13 @@ M.display_single_line_diff = function (cursor_line, new_content, opts)
         for _, pos in ipairs(red_positions) do
             vim.api.nvim_buf_set_extmark(0, ns, cursor_line, pos[1] - 1, {
                 end_row = cursor_line,
-                end_col = math.min(#current_line, pos[2] - 1), 
+                end_col = math.min(#current_line, pos[2] - 1),
                 hl_group = "InkWellDiffDelete",
                 hl_eol = false,
                 priority = 1000,
             })
         end
-        show_preview(bufnr, cursor_line, new_content[1], opts, green_positions)
+        show_single_line_preview(bufnr, cursor_line, new_content[1], opts, green_positions)
     end
 end
 
@@ -345,7 +432,7 @@ local lower_bound = function(tbl, value, comparator)
     local low = 1
     local high = #tbl
     local ret = #tbl + 1
-    while low <= high do 
+    while low <= high do
         local mid = math.floor((low + high) / 2)
         if comparator(tbl[mid], value) then
             ret = mid
@@ -362,16 +449,19 @@ local function get_all_including_red(start_index, end_index, red_positions)
     -- binary search for the last index in red_positions where red_positions[index][1] <= end_index
     local f = lower_bound(red_positions, start_index, function(a, b) return a[2] >= b end)
     local s = lower_bound(red_positions, end_index, function(a, b) return a[1] <= b end)
+    mdebug("red_positions: ", vim.inspect(red_positions))
+    mdebug("f: ", f, "s: ", s, "start_index: ", start_index, "end_index: ", end_index)
     s = math.min(s, #red_positions)
     local positions = {}
     for i = f, s do
-        local current_val = { math.max( red_positions[i][1], start_index ) - start_index + 1, math.min(red_positions[i][2], end_index) - start_index + 1}
+        local current_val = { math.max(red_positions[i][1], start_index) - start_index + 1, math.min(red_positions[i][2],
+            end_index) - start_index + 1 }
         table.insert(positions, current_val)
     end
     return positions
 end
 
-local function get_all_including_green(start_index, end_index, green_positions) 
+local function get_all_including_green(start_index, end_index, green_positions)
     local f = lower_bound(green_positions, start_index, function(a, b) return a[1] >= b end)
     local s = lower_bound(green_positions, end_index, function(a, b) return a[1] <= b end)
     s = math.min(s, #green_positions)
@@ -382,13 +472,13 @@ local function get_all_including_green(start_index, end_index, green_positions)
     for i = f, s do
         local difference = green_positions[i][2] - green_positions[i][1]
         local insertion_index = math.max(green_positions[i][1], start_index) - start_index + 1
-        local current_val = { insertion_index, insertion_index + difference}
+        local current_val = { insertion_index, insertion_index + difference }
         table.insert(positions, current_val)
     end
     return positions
 end
 
-M.display_diff = function (patch, opts)
+M.display_diff = function(patch, opts)
     print("patch: ", vim.inspect(patch))
     -- TODO check if the patch is visible on screen
     opts = opts or {}
@@ -404,9 +494,11 @@ M.display_diff = function (patch, opts)
     end
     local diff = M.get_diff(patch.line_start, patch.line_end, patch.new_lines)
     mdebug("diff: ", vim.inspect(diff))
+
     local original_iter = 1
     local red_positions = {}
     local green_positions = {}
+    local patch_green_positions = {}
     local addition_reference = {}
     local patch_iter = 1
 
@@ -416,13 +508,14 @@ M.display_diff = function (patch, opts)
             patch_iter = patch_iter + #diff[2]
         elseif diff[1] == 1 then
             -- insert BEFORE original_iter
-            table.insert(addition_reference, {patch_iter, patch_iter + #diff[2] - 1}) 
+            table.insert(addition_reference, { patch_iter, patch_iter + #diff[2] - 1 })
             -- TODO the end index above is inclusive, but exclusive in green_positions. Make it consistent.
             -- I can simply just drop the third index below. It adds nothing since we can look up the length thanks to addition_reference
-            table.insert(green_positions, {original_iter, original_iter + #diff[2], #addition_reference})
+            table.insert(green_positions, { original_iter, original_iter + #diff[2], #addition_reference })
+            table.insert(patch_green_positions, { patch_iter, patch_iter + #diff[2] })
             patch_iter = patch_iter + #diff[2]
         elseif diff[1] == -1 then
-            table.insert(red_positions, {original_iter, original_iter + #diff[2]})
+            table.insert(red_positions, { original_iter, original_iter + #diff[2] })
             original_iter = original_iter + #diff[2]
         end
     end
@@ -438,7 +531,7 @@ M.display_diff = function (patch, opts)
         if current_content:sub(iter, iter) == "\n" or iter == #current_content then
             local found_positions = get_all_including_red(line_start_index, iter, red_positions)
             for _, position in ipairs(found_positions) do
-                table.insert(adjusted_red_positions, {line_number, position[1], position[2]})
+                table.insert(adjusted_red_positions, { line_number, position[1], position[2] })
             end
             line_number = line_number + 1
             line_start_index = iter + 1
@@ -452,18 +545,15 @@ M.display_diff = function (patch, opts)
     line_start_index = 1
     -- print("current_content: ", current_content)
     mdebug("current_content: ", current_content)
-    for iter = 1, #current_content + 1 do 
-        if iter > #current_content or current_content:sub(iter, iter) == "\n" or iter == #current_content then
-            -- local line_end_index = iter - 1 -- TODO maybe this logic is entirely unnecessary
-            -- if iter == #current_content then
-            --     line_end_index = iter
-            -- end
+    for iter = 1, #current_content + 1 do
+        if iter > #current_content or current_content:sub(iter, iter) == "\n" then
             local line_end_index = iter
             mdebug("line_start_index: ", line_start_index, "line_end_index: ", line_end_index)
             local found_positions = get_all_including_green(line_start_index, line_end_index, green_positions)
             for index, position in ipairs(found_positions) do
                 local difference = green_positions[index][2] - green_positions[index][1]
-                table.insert(adjusted_green_positions, {line_number, position[1], position[1] + difference, green_positions[index][3]}) -- TODO double-check if this works
+                table.insert(adjusted_green_positions,
+                    { line_number, position[1], position[1] + difference, green_positions[index][3] })                                  -- TODO double-check if this works
             end
             line_number = line_number + 1
             line_start_index = iter + 1
@@ -475,12 +565,13 @@ M.display_diff = function (patch, opts)
 
     local concatenated_patch = table.concat(patch.new_lines, "\n")
 
-    if #green_positions == 0 then 
+    if #green_positions == 0 then
         for _, pos in ipairs(adjusted_red_positions) do
             local current_line = vim.api.nvim_buf_get_lines(0, pos[1] - 1, pos[1], false)[1]
+            mdebug("pos: ", vim.inspect(pos))
             vim.api.nvim_buf_set_extmark(0, ns, pos[1] - 1, pos[2] - 1, {
                 end_row = pos[1] - 1,
-                end_col = math.min(#current_line + 1, pos[3]),  -- need to provide one column to the right since it is zero-based exclusive
+                end_col = math.min(#current_line, pos[3]), -- need to provide one column to the right since it is zero-based exclusive
                 hl_group = "InkWellDiffDelete",
                 hl_eol = false,
                 priority = 1000
@@ -491,13 +582,28 @@ M.display_diff = function (patch, opts)
             local current_line = vim.api.nvim_buf_get_lines(0, pos[1] - 1, pos[1], false)[1]
             local start_index = addition_reference[pos[4]][1]
             local end_index = addition_reference[pos[4]][2]
-            vim.api.nvim_buf_set_extmark(0, ns, pos[1] - 1, math.min(#current_line, pos[2] - 1), {
-                virt_text = {{concatenated_patch:sub(start_index, end_index), "InkWellDiffAdd"}}, -- TODO need a better floating text highlight group
-                virt_text_pos = "inline",
-                priority = 1000,
-                right_gravity = false,
-                virt_text_hide = false -- TODO what is this and why is it necessary
-            })
+            local insert_text = concatenated_patch:sub(start_index, end_index)
+            local insert_lines_raw = vim.split(insert_text, "\n")
+
+            if #insert_lines_raw >= 1 then
+                local first_line = insert_lines_raw[1]
+                vim.api.nvim_buf_set_extmark(0, ns, pos[1] - 1, math.min(#current_line, pos[2] - 1), {
+                    virt_text = { { first_line, "InkWellDiffAdd" } },
+                    virt_text_pos = "inline",
+                    priority = 1000,
+                })
+            end
+            if #insert_lines_raw > 1 then
+                local virt_lines = {}
+                for i = 2, #insert_lines_raw do
+                    table.insert(virt_lines, { { insert_lines_raw[i], "InkWellDiffAdd" } })
+                end
+                vim.api.nvim_buf_set_extmark(0, ns, pos[1] - 1, math.min(#current_line, pos[2] - 1), {
+                    virt_lines = virt_lines,
+                    virt_lines_above = false,
+                    priority = 1000,
+                })
+            end
         end
     else
         -- both
@@ -505,14 +611,14 @@ M.display_diff = function (patch, opts)
             local current_line = vim.api.nvim_buf_get_lines(0, pos[1] - 1, pos[1], false)[1]
             vim.api.nvim_buf_set_extmark(0, ns, pos[1] - 1, pos[2] - 1, {
                 end_row = pos[1] - 1,
-                end_col = math.min(#current_line, pos[3] - 1), 
+                end_col = math.min(#current_line, pos[3] - 1),
                 hl_group = "InkWellDiffDelete",
                 hl_eol = false,
                 priority = 1000,
             })
         end
         -- TODO we don't want to show a bunch of previews. We want to show one big preview
-        -- show_preview(bufnr, pos[1], patch.new_lines[pos[1] - patch.line_start + 1], opts, pos)
+        show_preview(bufnr, patch, opts, patch_green_positions)
     end
 end
 
