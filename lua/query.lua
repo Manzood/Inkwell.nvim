@@ -82,6 +82,24 @@ local function validate_message_format(message)
 
 end
 
+local function validate_patches(patches)
+    for _, patch in ipairs(patches) do
+        if patch.line_start > patch.line_end or (patch.line_start == patch.line_end and #patch.new_lines == 0) then
+            patch.new_lines = {""}
+            patch.delete_line = true
+        elseif #patch.new_lines ~= patch.line_end - patch.line_start + 1 then
+            -- TODO test this with smarter LLMs. The cheaper models do not perform well with this.
+            -- if it's off by one, maybe just fix it for the LLM
+            if #patch.new_lines > patch.line_end - patch.line_start + 1 then
+                patch.line_end = patch.line_start + #patch.new_lines - 1
+            else
+                return false
+            end
+        end
+    end
+    return true
+end
+
 Parse_Response = function(response, provider)
     -- TODO add check to see if it was decoded successfully
     local decoded, err = vim.json.decode(response)
@@ -143,6 +161,8 @@ function Query_via_cmd_line(url, model, query_type, api_key)
             if not suggested_changes then return end -- TODO possibly redundant
             if not suggested_changes.patches or #suggested_changes.patches == 0 then return end -- TODO test this scenario
 
+            -- validate the patches
+
             logger.log_query({
                 request_id = request_id,
                 url = url,
@@ -155,13 +175,13 @@ function Query_via_cmd_line(url, model, query_type, api_key)
             })
 
             if suggested_changes then
+                if not validate_patches(suggested_changes.patches) then
+                    mdebug("Invalid patches: " .. vim.inspect(suggested_changes.patches))
+                    return
+                end
                 for _, patch in ipairs(suggested_changes.patches) do
                     -- catches common AI confusion about line numbers in the format 
                     -- TODO possibly rethink the format, and possibly allow the below as an acceptable output
-                    if patch.line_start > patch.line_end or (patch.line_start == patch.line_end and #patch.new_lines == 0) then
-                        patch.new_lines = {""}
-                        patch.delete_line = true
-                    end
                 end
                 Previous_Query_Data.suggested_changes = suggested_changes
                 Previous_Query_Data.request_id = request_id
@@ -170,7 +190,8 @@ function Query_via_cmd_line(url, model, query_type, api_key)
                 Previous_Query_Data.valid_change = true
                 vim.schedule(function()
                     for _, patch in ipairs(suggested_changes.patches) do
-                        my_display.display_single_line_diff(cursor_line, patch.new_lines);
+                        -- my_display.display_single_line_diff(cursor_line, patch.new_lines);
+                        my_display.display_diff(patch);
                     end
                 end)
             end
@@ -249,7 +270,7 @@ local function query_local_model(url, model, query)
 end
 
 function Query_Groq()
-    Query_via_cmd_line(GROQ_URL, MODELS.GPTOSS20B, Query_Type.SINGLE_LINE, GROQ_API_KEY)
+    Query_via_cmd_line(GROQ_URL, MODELS.GPTOSS20B, Query_Type.MULTI_LINE, GROQ_API_KEY)
     -- Query_via_cmd_line(GROQ_URL, MODELS.GPTOSS20B, content, Query_Type.MULTI_LINE, GROQ_API_KEY)
     -- Query_via_cmd_line(GROQ_URL, MODELS.LLAMA3_8B, content, GROQ_API_KEY)
 end
