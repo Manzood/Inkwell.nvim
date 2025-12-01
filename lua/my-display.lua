@@ -270,7 +270,7 @@ M.clear = function(opts)
     end
 end
 
-local function show_preview(bufnr, patch, opts, additions)
+local function show_preview(bufnr, patch, opts, patch_green_positions)
     opts = opts or {}
     local api = vim.api
     local ns = ns
@@ -284,12 +284,25 @@ local function show_preview(bufnr, patch, opts, additions)
         return
     end
 
+    -- Get target window and calculate position relative to the line being changed
+    local win = get_target_window(bufnr, opts)
+    if not win or not vim.api.nvim_win_is_valid(win) then
+        return
+    end
+
+    -- Calculate row position relative to the first line of the patch
+    local target_line = patch.line_start
+    local row = compute_window_row(win, target_line - 1)  -- line_start is 1-indexed, compute_window_row expects 0-indexed
+    if not row then
+        return
+    end
+
     -- Create preview buffer
     local preview_buf = api.nvim_create_buf(false, true)
     api.nvim_buf_set_option(preview_buf, "buftype", "nofile")
     api.nvim_buf_set_option(preview_buf, "bufhidden", "wipe")
     api.nvim_buf_set_option(preview_buf, "modifiable", true)
-    api.nvim_buf_set_option(preview_buf, "filetype", api.nvim_buf_get_option(0, "filetype"))
+    api.nvim_buf_set_option(preview_buf, "filetype", api.nvim_buf_get_option(bufnr, "filetype"))
 
     api.nvim_buf_set_lines(preview_buf, 0, -1, false, lines)
     api.nvim_buf_set_option(preview_buf, "modifiable", false)
@@ -303,26 +316,64 @@ local function show_preview(bufnr, patch, opts, additions)
     width = math.max(width, 10)
     height = math.max(height, 1)
 
-    -- Try to position to the right of main buffer, middle of the displayed area
-    local row = math.max(2, math.floor(vim.o.lines / 2 - height / 2))
-    local col = math.max(5, math.floor(vim.o.columns / 2 - width / 2))
+    -- Calculate column position (similar to single-line preview)
+    local popup_col = 0
+    vim.api.nvim_win_call(win, function()
+        local virt = vim.fn.virtcol({ target_line, "$" })
+        local info = vim.fn.getwininfo(win)[1] or {}
+        local textoff = info.textoff or 0
+        popup_col = math.max(0, (virt > 0 and virt - 1 or 0) + textoff)
+    end)
+
+    local configured_border = diff_highlights.config.preview.border
+    local border = opts and opts.preview_border or configured_border
+    border = border or "rounded"
+    local has_border = border and border ~= "none" and border ~= false
+    local border_padding = has_border and 1 or 0
+
+    local padding = (opts and opts.preview_padding) or diff_highlights.config.preview.padding or 2
+    local row_offset = (opts and opts.preview_row_offset) or diff_highlights.config.preview.row_offset or 0
+    local target_col = popup_col + padding + border_padding
+
+    -- Ensure window fits within the target window
+    local win_width = vim.api.nvim_win_get_width(win)
+    local effective_width = width + (has_border and 2 or 0)
+    local max_col = math.max(0, win_width - effective_width)
+    if target_col > max_col then
+        target_col = max_col
+    end
 
     local preview_win = api.nvim_open_win(preview_buf, false, {
-        relative = "editor",
-        anchor = "NW",
+        relative = "win",
+        win = win,
+        row = math.max(row + row_offset, 0),
+        col = target_col,
         width = width,
         height = height,
-        row = row,
-        col = col,
-        style = "minimal",
-        border = "rounded",
-        noautocmd = true,
         focusable = false,
+        style = "minimal",
+        border = border,
+        noautocmd = true,
     })
 
     -- Optionally highlight window
-    if opts.preview_winhl or diff_highlights and diff_highlights.config and diff_highlights.config.preview and diff_highlights.config.preview.winhl then
-        local winhl_str = opts.preview_winhl or diff_highlights.config.preview.winhl
+    local winhl = (opts and opts.preview_winhl) or diff_highlights.config.preview.winhl
+    if winhl then
+        local winhl_str
+        if type(winhl) == "table" then
+            local parts = {}
+            for from, to in pairs(winhl) do
+                if type(from) == "string" and type(to) == "string" and to ~= "" then
+                    table.insert(parts, string.format("%s:%s", from, to))
+                end
+            end
+            table.sort(parts)
+            if #parts > 0 then
+                winhl_str = table.concat(parts, ",")
+            end
+        elseif type(winhl) == "string" then
+            winhl_str = winhl
+        end
         if winhl_str and winhl_str ~= "" then
             pcall(vim.api.nvim_set_option_value, "winhl", winhl_str, { win = preview_win })
         end
@@ -333,15 +384,40 @@ local function show_preview(bufnr, patch, opts, additions)
     (diff_highlights and diff_highlights.config and diff_highlights.config.preview and diff_highlights.config.preview.hl_group) or
     (diff_highlights and diff_highlights.default_highlights and diff_highlights.default_highlights.preview) or "DiffAdd"
 
-    -- `additions` is an array of {line_idx, start_col, end_col} (1-indexed!)
-    if preview_hl and additions then
-        for _, seg in ipairs(additions) do
-            local line_idx = seg[1]
-            local start_col = seg[2]
-            local end_col = seg[3]
-            -- Defensive: adjust for 1-based to 0-based indexing
-            if lines[line_idx] then
-                api.nvim_buf_add_highlight(preview_buf, ns, preview_hl, line_idx - 1, start_col - 1, end_col - 1)
+    -- Convert patch_green_positions (character indices in concatenated string) to line/column positions
+    -- patch_green_positions is array of {start_char_index, end_char_index} in concatenated patch string
+    if preview_hl and patch_green_positions and #patch_green_positions > 0 then
+        local concatenated_patch = table.concat(lines, "\n")
+        -- Build a mapping of character positions to line/column
+        -- For each line, track where it starts and ends in the concatenated string
+        local line_start_chars = {}  -- Track where each line starts in the concatenated string
+        local char_pos = 1
+        for i, line in ipairs(lines) do
+            line_start_chars[i] = char_pos
+            char_pos = char_pos + #line + 1  -- +1 for newline between lines
+        end
+
+        for _, seg in ipairs(patch_green_positions) do
+            local start_char = seg[1]
+            local end_char = seg[2]  -- end_char is exclusive
+
+            -- Find which line(s) this segment spans
+            for line_idx = 1, #lines do
+                local line_start = line_start_chars[line_idx]
+                -- Line ends before the newline (or end of string for last line)
+                local line_end = line_idx < #lines and (line_start_chars[line_idx + 1] - 1) or #concatenated_patch
+
+                -- Check if this segment overlaps with this line
+                if start_char <= line_end and end_char > line_start then
+                    -- Calculate column positions within this line
+                    local seg_start_in_line = math.max(1, start_char - line_start + 1)
+                    local seg_end_in_line = math.min(#lines[line_idx] + 1, end_char - line_start + 1)
+
+                    if seg_start_in_line <= seg_end_in_line then
+                        -- Highlight this portion of the line (convert to 0-indexed for nvim_buf_add_highlight)
+                        api.nvim_buf_add_highlight(preview_buf, ns, preview_hl, line_idx - 1, seg_start_in_line - 1, seg_end_in_line - 1)
+                    end
+                end
             end
         end
     end
@@ -349,7 +425,7 @@ local function show_preview(bufnr, patch, opts, additions)
     -- State keeping so we can later clear this preview if needed
     preview_state = preview_state or {}
     preview_state[bufnr] = preview_state[bufnr] or {}
-    local line = opts.line or 0
+    local line = target_line - 1  -- Store as 0-indexed
     preview_state[bufnr][line] = {
         win = preview_win,
         buf = preview_buf,
@@ -436,9 +512,9 @@ local lower_bound = function(tbl, value, comparator)
         local mid = math.floor((low + high) / 2)
         if comparator(tbl[mid], value) then
             ret = mid
-            low = mid + 1
-        else
             high = mid - 1
+        else
+            low = mid + 1
         end
     end
     return ret
@@ -609,6 +685,7 @@ M.display_diff = function(patch, opts)
             end
         end
     else
+        mdebug("adjusted_red_positions: ", vim.inspect(adjusted_red_positions))
         for _, pos in ipairs(adjusted_red_positions) do
             local current_line = vim.api.nvim_buf_get_lines(0, pos[1] - 1, pos[1], false)[1]
             vim.api.nvim_buf_set_extmark(0, ns, pos[1] - 1, pos[2] - 1, {
