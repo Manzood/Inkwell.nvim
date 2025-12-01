@@ -449,15 +449,17 @@ local function get_all_including_red(start_index, end_index, red_positions)
     -- binary search for the last index in red_positions where red_positions[index][1] <= end_index
     local f = lower_bound(red_positions, start_index, function(a, b) return a[2] >= b end)
     local s = lower_bound(red_positions, end_index, function(a, b) return a[1] <= b end)
+    s = math.min(s, #red_positions)
     mdebug("red_positions: ", vim.inspect(red_positions))
     mdebug("f: ", f, "s: ", s, "start_index: ", start_index, "end_index: ", end_index)
-    s = math.min(s, #red_positions)
     local positions = {}
     for i = f, s do
         local current_val = { math.max(red_positions[i][1], start_index) - start_index + 1, math.min(red_positions[i][2],
             end_index) - start_index + 1 }
+        mdebug("current_val: ", vim.inspect(current_val))
         table.insert(positions, current_val)
     end
+    mdebug("positions: ", vim.inspect(positions))
     return positions
 end
 
@@ -537,8 +539,8 @@ M.display_diff = function(patch, opts)
             line_start_index = iter + 1
         end
     end
-    -- mdebug("red_positions: ", vim.inspect(red_positions))
-    -- mdebug("adjusted_red_positions: ", vim.inspect(adjusted_red_positions))
+    mdebug("red_positions: ", vim.inspect(red_positions))
+    mdebug("adjusted_red_positions: ", vim.inspect(adjusted_red_positions))
 
     line_number = patch.line_start
     -- TODO the snippet below can just take in a function and a table as an argument and be the same as the snippet above
@@ -559,6 +561,7 @@ M.display_diff = function(patch, opts)
             line_start_index = iter + 1
         end
     end
+
     mdebug("addition_reference: ", vim.inspect(addition_reference))
     mdebug("green_positions: ", vim.inspect(green_positions))
     mdebug("adjusted_green_positions: ", vim.inspect(adjusted_green_positions))
@@ -606,12 +609,11 @@ M.display_diff = function(patch, opts)
             end
         end
     else
-        -- both
         for _, pos in ipairs(adjusted_red_positions) do
             local current_line = vim.api.nvim_buf_get_lines(0, pos[1] - 1, pos[1], false)[1]
             vim.api.nvim_buf_set_extmark(0, ns, pos[1] - 1, pos[2] - 1, {
                 end_row = pos[1] - 1,
-                end_col = math.min(#current_line, pos[3] - 1),
+                end_col = math.min(#current_line, pos[3]),
                 hl_group = "InkWellDiffDelete",
                 hl_eol = false,
                 priority = 1000,
