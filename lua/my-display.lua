@@ -46,7 +46,7 @@ function M.get_diff_single_line(cursor_line, new_content)
 
     local current_content = vim.api.nvim_buf_get_lines(0, cursor_line, cursor_line + 1, false)[1]
     local diff = dmp.diff_main(current_content, new_content)
-    dmp:diff_cleanupSemantic(diff)
+    dmp.diff_cleanupSemantic(diff)
 
     return diff
 end
@@ -69,7 +69,9 @@ function M.get_diff(line_start, line_end, new_lines)
         current_content = ""
     end
     local diff = dmp.diff_main(current_content, table.concat(new_lines, "\n"))
-    dmp:diff_cleanupSemantic(diff)
+    print("diff: ", vim.inspect(diff))
+    dmp.diff_cleanupSemantic(diff)
+    print("diff after cleanup: ", vim.inspect(diff))
 
     return diff
 end
