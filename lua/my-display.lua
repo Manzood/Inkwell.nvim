@@ -483,7 +483,7 @@ M.display_single_line_diff = function(cursor_line, new_content, opts)
         -- write the additive stuff as ghost text
         for _, pos in ipairs(green_positions) do
             vim.api.nvim_buf_set_extmark(0, ns, cursor_line, math.min(#current_line, pos[1] - 1), {
-                virt_text = { { new_content[1]:sub(pos[1], pos[2] - 1), "InkWellDiffAdd" } }, -- TODO need a better floating text highlight group
+                virt_text = { { new_content[1]:sub(pos[1], pos[2] - 1), "InkWellGhostText" } },
                 virt_text_pos = "inline",
                 priority = 1000,
                 right_gravity = false,
@@ -671,7 +671,7 @@ M.display_diff = function(patch, opts)
             if #insert_lines_raw >= 1 then
                 local first_line = insert_lines_raw[1]
                 vim.api.nvim_buf_set_extmark(0, ns, pos[1] - 1, math.min(#current_line, pos[2] - 1), {
-                    virt_text = { { first_line, "InkWellDiffAdd" } },
+                    virt_text = { { first_line, "InkWellGhostText" } },
                     virt_text_pos = "inline",
                     priority = 1000,
                 })
@@ -679,7 +679,7 @@ M.display_diff = function(patch, opts)
             if #insert_lines_raw > 1 then
                 local virt_lines = {}
                 for i = 2, #insert_lines_raw do
-                    table.insert(virt_lines, { { insert_lines_raw[i], "InkWellDiffAdd" } })
+                    table.insert(virt_lines, { { insert_lines_raw[i], "InkWellGhostText" } })
                 end
                 vim.api.nvim_buf_set_extmark(0, ns, pos[1] - 1, math.min(#current_line, pos[2] - 1), {
                     virt_lines = virt_lines,
