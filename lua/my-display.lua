@@ -69,9 +69,9 @@ function M.get_diff(line_start, line_end, new_lines)
         current_content = ""
     end
     local diff = dmp.diff_main(current_content, table.concat(new_lines, "\n"))
-    print("diff: ", vim.inspect(diff))
+    mdebug("diff: ", vim.inspect(diff))
     dmp.diff_cleanupSemantic(diff)
-    print("diff after cleanup: ", vim.inspect(diff))
+    mdebug("diff after cleanup: ", vim.inspect(diff))
 
     return diff
 end
@@ -318,13 +318,17 @@ local function show_preview(bufnr, patch, opts, patch_green_positions)
     width = math.max(width, 10)
     height = math.max(height, 1)
 
-    -- Calculate column position (similar to single-line preview)
+    -- Calculate column position based on the longest line being changed
     local popup_col = 0
     vim.api.nvim_win_call(win, function()
-        local virt = vim.fn.virtcol({ target_line, "$" })
         local info = vim.fn.getwininfo(win)[1] or {}
         local textoff = info.textoff or 0
-        popup_col = math.max(0, (virt > 0 and virt - 1 or 0) + textoff)
+        -- Find the longest line in the range being changed
+        for line_num = patch.line_start, patch.line_end do
+            local virt = vim.fn.virtcol({ line_num, "$" })
+            local col = (virt > 0 and virt - 1 or 0) + textoff
+            popup_col = math.max(popup_col, col)
+        end
     end)
 
     local configured_border = diff_highlights.config.preview.border
@@ -561,7 +565,7 @@ local function get_all_including_green(start_index, end_index, green_positions)
 end
 
 M.display_diff = function(patch, opts)
-    print("patch: ", vim.inspect(patch))
+    mdebug("patch: ", vim.inspect(patch))
     -- TODO check if the patch is visible on screen
     opts = opts or {}
     local bufnr = resolve_bufnr(opts)
@@ -625,7 +629,6 @@ M.display_diff = function(patch, opts)
     -- TODO the snippet below can just take in a function and a table as an argument and be the same as the snippet above
     line_number = patch.line_start
     line_start_index = 1
-    -- print("current_content: ", current_content)
     mdebug("current_content: ", current_content)
     for iter = 1, #current_content + 1 do
         if iter > #current_content or current_content:sub(iter, iter) == "\n" then

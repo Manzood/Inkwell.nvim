@@ -10,11 +10,13 @@ local highlight_initialized = false
 local preview_state = {}
 M.config = {
     preview = {
-        border = "rounded",
+        border = "none",
         padding = 2,
         row_offset = -1,
         hl_group = default_highlights.preview,
-        highlight = nil,
+        highlight = {
+            fg = "#98c379",
+        },
         winhl = nil,
         winhl_highlights = nil,
     },
@@ -133,6 +135,19 @@ local presets = {
             },
         },
     },
+    tight = {
+        preview = {
+            border = "none",
+            padding = 2,
+            row_offset = -1,
+            hl_group = default_highlights.preview,
+            highlight = {
+                fg = "#98c379",
+            },
+            winhl = nil,
+            winhl_highlights = nil,
+        },
+    },
 }
 
 -- TODO go through the highlight stuff
@@ -207,6 +222,43 @@ function M.ensure_highlights()
     highlight_initialized = true
 end
 
+local function merge_config(target, overrides)
+    if type(overrides) ~= "table" then
+        return
+    end
+    for key, value in pairs(overrides) do
+        if type(value) == "table" and type(target[key]) == "table" then
+            merge_config(target[key], value)
+        else
+            target[key] = value
+        end
+    end
+end
 
+function M.setup(user_config)
+    if user_config ~= nil then
+        merge_config(M.config, user_config)
+        highlight_initialized = false
+    end
+    return M.config
+end
+
+M.themes = presets
+
+function M.use_theme(name, overrides)
+    local preset = presets[name]
+    if not preset then
+        error(("Unknown diff-highlights theme '%s'"):format(tostring(name)))
+    end
+    local merged = vim.deepcopy(preset)
+    if overrides then
+        merge_config(merged, overrides)
+    end
+    return M.setup(merged)
+end
+
+function M.get_themes()
+    return vim.deepcopy(presets)
+end
 
 return M
