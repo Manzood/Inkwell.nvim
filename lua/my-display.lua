@@ -524,7 +524,10 @@ local function get_all_including_red(start_index, end_index, red_positions)
     -- binary search for the first index in red_positions where red_positions[index][2] >= start_index
     -- binary search for the last index in red_positions where red_positions[index][1] <= end_index
     local f = lower_bound(red_positions, start_index, function(a, b) return a[2] >= b end)
-    local s = lower_bound(red_positions, end_index, function(a, b) return a[1] <= b end)
+    local s = lower_bound(red_positions, end_index, function(a, b) return a[1] >= b end)
+    s = s - 1
+    if s < 1 then return {} end
+
     s = math.min(s, #red_positions)
     mdebug("red_positions: ", vim.inspect(red_positions))
     mdebug("f: ", f, "s: ", s, "start_index: ", start_index, "end_index: ", end_index)
@@ -532,7 +535,6 @@ local function get_all_including_red(start_index, end_index, red_positions)
     for i = f, s do
         local current_val = { math.max(red_positions[i][1], start_index) - start_index + 1, math.min(red_positions[i][2],
             end_index) - start_index + 1 }
-        mdebug("current_val: ", vim.inspect(current_val))
         table.insert(positions, current_val)
     end
     mdebug("positions: ", vim.inspect(positions))
@@ -605,8 +607,8 @@ M.display_diff = function(patch, opts)
 
     -- TODO assert that both red_positions and green_positions are already sorted
     local line_start_index = 1
-    for iter = 1, #current_content do
-        if current_content:sub(iter, iter) == "\n" or iter == #current_content then
+    for iter = 1, #current_content + 1 do
+        if current_content:sub(iter, iter) == "\n" or iter == #current_content + 1 then
             local found_positions = get_all_including_red(line_start_index, iter, red_positions)
             for _, position in ipairs(found_positions) do
                 table.insert(adjusted_red_positions, { line_number, position[1], position[2] })
@@ -618,8 +620,8 @@ M.display_diff = function(patch, opts)
     mdebug("red_positions: ", vim.inspect(red_positions))
     mdebug("adjusted_red_positions: ", vim.inspect(adjusted_red_positions))
 
-    line_number = patch.line_start
     -- TODO the snippet below can just take in a function and a table as an argument and be the same as the snippet above
+    line_number = patch.line_start
     line_start_index = 1
     -- print("current_content: ", current_content)
     mdebug("current_content: ", current_content)
@@ -650,7 +652,7 @@ M.display_diff = function(patch, opts)
             mdebug("pos: ", vim.inspect(pos))
             vim.api.nvim_buf_set_extmark(0, ns, pos[1] - 1, pos[2] - 1, {
                 end_row = pos[1] - 1,
-                end_col = math.min(#current_line, pos[3]), -- need to provide one column to the right since it is zero-based exclusive
+                end_col = math.min(#current_line, pos[3] - 1), -- TODO documentation says it's zero based exclusive, but this isn't how it looks like it works in practice. Really weird
                 hl_group = "InkWellDiffDelete",
                 hl_eol = false,
                 priority = 1000
@@ -690,7 +692,7 @@ M.display_diff = function(patch, opts)
             local current_line = vim.api.nvim_buf_get_lines(0, pos[1] - 1, pos[1], false)[1]
             vim.api.nvim_buf_set_extmark(0, ns, pos[1] - 1, pos[2] - 1, {
                 end_row = pos[1] - 1,
-                end_col = math.min(#current_line, pos[3]),
+                end_col = math.min(#current_line, pos[3] - 1),
                 hl_group = "InkWellDiffDelete",
                 hl_eol = false,
                 priority = 1000,
