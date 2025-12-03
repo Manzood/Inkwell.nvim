@@ -124,6 +124,7 @@ Parse_Response = function(response, provider)
         mdebug("Response: " .. response)
         return
     end
+    mdebug("provider: ", provider)
     if provider == PROVIDERS.GROQ then
         if not decoded.choices then
             mdebug("Decoded.choices doesn't exist")
@@ -304,9 +305,9 @@ end
 
 function Query_Groq()
     mdebug("Query_Groq")
-    Query_via_cmd_line(MODELS.GPTOSS20B.url, MODELS.GPTOSS20B, Query_Type.MULTI_LINE, GROQ_API_KEY)
+    -- Query_via_cmd_line(MODELS.GPTOSS20B.url, MODELS.GPTOSS20B, Query_Type.MULTI_LINE, GROQ_API_KEY)
     -- Query_via_cmd_line(GROQ_URL, MODELS.GPTOSS20B, content, Query_Type.MULTI_LINE, GROQ_API_KEY)
-    -- Query_via_cmd_line(GROQ_URL, MODELS.LLAMA3_8B, content, GROQ_API_KEY)
+    Query_via_cmd_line(MODELS.LLAMA3_8B.url, MODELS.LLAMA3_8B, Query_Type.MULTI_LINE, GROQ_API_KEY)
 end
 
 function Query_Phi3()

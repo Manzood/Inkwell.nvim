@@ -24,7 +24,7 @@ Send_Query = debounce(function(bufnr)
 
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     Current_Request_Id = Current_Request_Id + 1
-    local job_id = Query_Groq()
+    local job_id = Query_OpenAI()
     -- local job_id = Query_Phi3(content)
 end, 200) -- TODO set something better as the value. It used to be 300ms
 

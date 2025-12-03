@@ -3,6 +3,7 @@ SYSTEM_PROMPT = "You are a precise code-completion agent."
 -- TODO read the URL from a config file
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+OPENAI_URL = "https://api.openai.com/v1/responses"
 OLLAMA_GENERATE_URL = "http://localhost:11434/api/generate"
 OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
 QUERY_NUMBER_OF_LINES = 30
@@ -13,6 +14,7 @@ PROVIDERS = {
     GOOGLE = "google",
     OLLAMA = "ollama",
     AWS = "aws",
+    OPENAI = "openai",
 }
 
 MODELS = {
@@ -28,8 +30,9 @@ MODELS = {
       url = GROQ_URL,
     },
     LLAMA3_8B = {
-      provider = PROVIDERS.OLLAMA,
+      provider = PROVIDERS.GROQ,
       name = "llama-3.1-8b-instant",
+      url = GROQ_URL,
     },
     GEMINI_2_5_FLASH = {
       provider = PROVIDERS.GOOGLE,
@@ -37,6 +40,12 @@ MODELS = {
       api_key_env_var = "GEMINI_API_KEY",
       url = GEMINI_URL,
       auth_string = "x-goog-api-key: ",
+    },
+    GPT_5_1 = {
+      provider = PROVIDERS.OPENAI,
+      name = "gpt-5.1",
+      api_key_env_var = "OPENAI_API_KEY",
+      url = OPENAI_URL,
     }
 }
 
