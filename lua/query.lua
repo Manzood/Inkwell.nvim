@@ -20,6 +20,7 @@ env.load_env(project_root .. "/.env")
 Suggestion_Just_Accepted = false
 local GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 local GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+local OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 -- TODO add check to see if the API key didn't make it
 
 Current_Request_Id = 0
@@ -61,6 +62,15 @@ function Create_Gemini_Query(model, query_type)
             role = "user",
             parts = { { text = prompt } },
         },
+    }
+    return vim.fn.json_encode(payload)
+end
+
+function Create_OpenAI_Query(model, query_type)
+    local prompt = create_prompt(model, query_type)
+    local payload = {
+        model = model.name,
+        input = prompt,
     }
     return vim.fn.json_encode(payload)
 end
@@ -136,6 +146,9 @@ Parse_Response = function(response, provider)
     elseif provider == PROVIDERS.GOOGLE then
         mdebug("decoded: ", vim.inspect(decoded.candidates[1].content.parts[1].text))
         return sanitize_message(decoded.candidates[1].content.parts[1].text)
+    elseif provider == PROVIDERS.OPENAI then
+        mdebug("decoded: ", vim.inspect(decoded.output[1]))
+        return sanitize_message(decoded.output[1].content[1].text)
     end
 end
 
@@ -147,6 +160,8 @@ function Query_via_cmd_line(url, model, query_type, api_key, auth_string)
     local query = nil
     if model.provider == PROVIDERS.GOOGLE then
         query = Create_Gemini_Query(model, query_type)
+    elseif model.provider == PROVIDERS.OPENAI then
+        query = Create_OpenAI_Query(model, query_type)
     else
         query = Create_Generic_Query(model, query_type)
     end
@@ -183,6 +198,7 @@ function Query_via_cmd_line(url, model, query_type, api_key, auth_string)
 
             Previous_Query_Data.request_id = Current_Request_Id
             Previous_Query_Data.response = result.stdout
+
             local ok, suggested_changes = pcall(function()
                 -- TODO verify the output format in this case
                 return vim.json.decode(Parse_Response(result.stdout, model.provider))
@@ -318,6 +334,11 @@ function Query_Gemini()
     mdebug("Query_Gemini")
     -- TODO clean up the code inside since you're now passing the model directly
     Query_via_cmd_line(MODELS.GEMINI_2_5_FLASH.url, MODELS.GEMINI_2_5_FLASH, Query_Type.MULTI_LINE, GEMINI_API_KEY, MODELS.GEMINI_2_5_FLASH.auth_string)
+end
+
+function Query_OpenAI()
+    mdebug("Query_OpenAI")
+    Query_via_cmd_line(MODELS.GPT_5_1.url, MODELS.GPT_5_1, Query_Type.MULTI_LINE, OPENAI_API_KEY)
 end
 
 -- TODO add AWS support
