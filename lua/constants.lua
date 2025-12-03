@@ -2,21 +2,42 @@ SYSTEM_PROMPT = "You are a precise code-completion agent."
 
 -- TODO read the URL from a config file
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 OLLAMA_GENERATE_URL = "http://localhost:11434/api/generate"
 OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
 QUERY_NUMBER_OF_LINES = 30
 MAX_LINES_TO_CHANGE = 10
 
-MODELS = {
-    PHI3 = "phi3",
-    GPTOSS20B = "openai/gpt-oss-20b",
-    LLAMA3_8B = "llama-3.1-8b-instant",
-}
-
 PROVIDERS = {
     GROQ = "groq",
-    AWS = "aws",
+    GOOGLE = "google",
     OLLAMA = "ollama",
+    AWS = "aws",
+}
+
+MODELS = {
+    PHI3 = {
+      provider = PROVIDERS.OLLAMA,
+      name = "phi3",
+      api_key_env_var = "OLLAMA_API_KEY",
+    },
+    GPTOSS20B = {
+      provider = PROVIDERS.GROQ,
+      name = "openai/gpt-oss-20b",
+      api_key_env_var = "GROQ_API_KEY",
+      url = GROQ_URL,
+    },
+    LLAMA3_8B = {
+      provider = PROVIDERS.OLLAMA,
+      name = "llama-3.1-8b-instant",
+    },
+    GEMINI_2_5_FLASH = {
+      provider = PROVIDERS.GOOGLE,
+      name = "gemini-2.5-flash",
+      api_key_env_var = "GEMINI_API_KEY",
+      url = GEMINI_URL,
+      auth_string = "x-goog-api-key: ",
+    }
 }
 
 -- TODO add a more basic version for weaker models.

@@ -14,16 +14,17 @@ local plugin_root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:match("@(.*)
 package.path = package.path .. ";" .. plugin_root .. "/tools/?.lua"
 local log_viewer = require("log-viewer.init")
 
-print(project_root)
+mdebug(project_root)
 env.load_env(project_root .. "/.env")
 
 Suggestion_Just_Accepted = false
 local GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+local GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 -- TODO add check to see if the API key didn't make it
 
 Current_Request_Id = 0
 
-function Create_Query(model, query_type)
+local function create_prompt(model, query_type) 
     local filetype = vim.bo.filetype
     local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
     local start_line = math.max(cursor_line - QUERY_NUMBER_OF_LINES, 1)
@@ -35,16 +36,31 @@ function Create_Query(model, query_type)
     prompt = prompt:gsub("<filetype>", filetype):gsub("<code excerpt>", content):gsub("<cursor_line>",
         cursor_line)
     prompt = prompt:gsub("<start_line>", start_line):gsub("<end_line>", end_line) -- TODO test this
-    -- print("prompt: " .. prompt)
+    return prompt
+end
+
+function Create_Generic_Query(model, query_type)
+    local prompt = create_prompt(model, query_type)
 
     local payload = {
-        model = model,
+        model = model.name,
         messages = {
             { role = "system", content = SYSTEM_PROMPT },
             { role = "user",   content = prompt },
         },
         temperature = 0.2,
         stream = false, -- TODO test out what difference this makes
+    }
+    return vim.fn.json_encode(payload)
+end
+
+function Create_Gemini_Query(model, query_type)
+    local prompt = create_prompt(model, query_type)
+    local payload = {
+        contents = {
+            role = "user",
+            parts = { { text = prompt } },
+        },
     }
     return vim.fn.json_encode(payload)
 end
@@ -66,12 +82,12 @@ local function sanitize_message(message)
 
     -- mdebug("ret: ", ret, "ret.sub(1, 1): ", ret.sub(1, 1), "ret.sub(-1, -1): ", ret.sub(-1, -1))
     -- TODO should probably do a little better than this
-    if ret:sub(1, 1) == "`" then
+    while #ret > 0 and ret:sub(1, 1) == "`" do
         mdebug(ret)
         ret = ret:sub(2, -2)
         mdebug(ret)
     end
-    if ret:sub(-1, -1) == "`" then
+    while #ret > 0 and ret:sub(-1, -1) == "`" do
         ret = ret:sub(1, -2)
     end
     return ret
@@ -116,12 +132,23 @@ Parse_Response = function(response, provider)
         return sanitize_message(decoded.choices[1].message.content)
     elseif provider == PROVIDERS.OLLAMA then
         return sanitize_message(decoded.message.content)
+    elseif provider == PROVIDERS.GOOGLE then
+        mdebug("decoded: ", vim.inspect(decoded.candidates[1].content.parts[1].text))
+        return sanitize_message(decoded.candidates[1].content.parts[1].text)
     end
 end
 
 -- TODO rename this function
-function Query_via_cmd_line(url, model, query_type, api_key)
-    local query = Create_Query(model, query_type)
+function Query_via_cmd_line(url, model, query_type, api_key, auth_string)
+    if not auth_string or auth_string == "" then
+        auth_string = "Authorization: Bearer "
+    end
+    local query = nil
+    if model.provider == PROVIDERS.GOOGLE then
+        query = Create_Gemini_Query(model, query_type)
+    else
+        query = Create_Generic_Query(model, query_type)
+    end
     local request_id = Current_Request_Id
     local command = { "curl", "-s",
         "-X", "POST", url,
@@ -129,10 +156,14 @@ function Query_via_cmd_line(url, model, query_type, api_key)
     }
     if api_key and api_key ~= "" then
         table.insert(command, "-H")
-        table.insert(command, "Authorization: Bearer " .. api_key)
+        table.insert(command, auth_string .. api_key)
     end
     table.insert(command, "-d")
     table.insert(command, query)
+
+    -- store current time
+    local start_time = vim.loop.now()
+
     local cursor_line = vim.api.nvim_win_get_cursor(0)[1] - 1
     local original_line = vim.api.nvim_buf_get_lines(0, cursor_line - 1, cursor_line, false)[1]
 
@@ -145,13 +176,15 @@ function Query_via_cmd_line(url, model, query_type, api_key)
                 return
             end
 
+            local end_time = vim.loop.now()
+            local duration = end_time - start_time
+            mdebug("Duration: ", duration)
+
             Previous_Query_Data.request_id = Current_Request_Id
             Previous_Query_Data.response = result.stdout
-            -- mdebug("GROQ Response: " .. Parse_Response(result.stdout, PROVIDERS.GROQ))
-            -- local suggested_change = vim.json.decode(Parse_Response(result.stdout, PROVIDERS.GROQ))
             local ok, suggested_changes = pcall(function()
                 -- TODO verify the output format in this case
-                return vim.json.decode(Parse_Response(result.stdout, PROVIDERS.GROQ))
+                return vim.json.decode(Parse_Response(result.stdout, model.provider))
             end)
             if not ok then
                 mdebug("Error decoding response: " .. vim.inspect(err))
@@ -166,7 +199,7 @@ function Query_via_cmd_line(url, model, query_type, api_key)
             logger.log_query({
                 request_id = request_id,
                 url = url,
-                model = model,
+                model = model.name,
                 query = query,
                 response = result.stdout,
                 suggested_changes = suggested_changes.patches,
@@ -270,13 +303,20 @@ local function query_local_model(url, model, query)
 end
 
 function Query_Groq()
-    Query_via_cmd_line(GROQ_URL, MODELS.GPTOSS20B, Query_Type.MULTI_LINE, GROQ_API_KEY)
+    mdebug("Query_Groq")
+    Query_via_cmd_line(MODELS.GPTOSS20B.url, MODELS.GPTOSS20B, Query_Type.MULTI_LINE, GROQ_API_KEY)
     -- Query_via_cmd_line(GROQ_URL, MODELS.GPTOSS20B, content, Query_Type.MULTI_LINE, GROQ_API_KEY)
     -- Query_via_cmd_line(GROQ_URL, MODELS.LLAMA3_8B, content, GROQ_API_KEY)
 end
 
 function Query_Phi3()
-    query_local_model(OLLAMA_CHAT_URL, MODELS.PHI3, Create_Query(MODELS.PHI3, Query_Type.SINGLE_LINE))
+    query_local_model(OLLAMA_CHAT_URL, MODELS.PHI3, Create_Generic_Query(MODELS.PHI3, Query_Type.SINGLE_LINE))
+end
+
+function Query_Gemini()
+    mdebug("Query_Gemini")
+    -- TODO clean up the code inside since you're now passing the model directly
+    Query_via_cmd_line(MODELS.GEMINI_2_5_FLASH.url, MODELS.GEMINI_2_5_FLASH, Query_Type.MULTI_LINE, GEMINI_API_KEY, MODELS.GEMINI_2_5_FLASH.auth_string)
 end
 
 -- TODO add AWS support
