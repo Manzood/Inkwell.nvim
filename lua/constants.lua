@@ -137,11 +137,11 @@ based on the local context and project style.
 
 Requirements:
 - You may suggest multiple lines of code, but they must form a continuous block starting from the current cursor line.
+- This means that you may not suggest any code changes on the lines above the current cursor line.
 - You may change at most %d lines.
 - Prefer functional or semantic improvements (logic, correctness, completion) over whitespace or cosmetic formatting.
 - Keep indentation and naming consistent with the file.
 - The completion can represent a *partial change* in a larger logical improvement.  (This is acceptable if it helps guide the user.)
-- Never alter any lines outside your suggested block.
 
 Do not include any other text or explanation besides the required output.
 
@@ -156,29 +156,6 @@ The user's cursor is on line <cursor_line> of the code above.
 
 ]]
 
--- TODO once again this is an old format, possibly remove this
-MULTI_LINE_OUTPUT_FORMAT = [[
-Output (JSON):
-Output:
-You must produce exactly ONE of the following:
-
-1. A JSON object of the form:
-   {
-     "new_lines": [
-     "<suggested line or empty string>",
-       "<suggested line or empty string>",
-       ...
-     ]
-   }
-
-2. If you predict NO meaningful change, output exactly:
-   "<NO_CHANGE_STRING>"
-
-3. If you intend to DELETE the current line entirely, output exactly:
-   "<DELETE_LINE_STRING>"
-
-]]
-
 MULTI_LINE_NOTES = [[
 Notes:
 - Output according to the output format only - do NOT include ```json fences.
@@ -186,6 +163,3 @@ Notes:
 ]]
 
 MULTI_LINE_PROMPT = MULTI_LINE_BASE_INSTRUCTIONS .. MULTI_LINE_INPUT_FORMAT .. PATCH_OUTPUT_FORMAT .. MULTI_LINE_NOTES
-
--- TODO add parsing for backticks and JSON in the response, since some smaller language models don't seem to understand the output format no matter how specific you are
--- It might just be easier to ask every model to output in a well-known JSON format, and then parse it.

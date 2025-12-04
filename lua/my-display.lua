@@ -124,7 +124,11 @@ local function compute_window_row(win, line)
     local row
     vim.api.nvim_win_call(win, function()
         local topline = vim.fn.line("w0")
-        row = line + 1 - topline
+        -- line is 0-indexed buffer line, topline is 1-indexed buffer line of first visible line
+        -- Calculate window row: convert line to 1-indexed, subtract topline, result is 0-indexed window row
+        -- Fix: Add 1 to account for floating window positioning being relative to window content area
+        -- This fixes the bug where preview window appears one line too high
+        row = (line + 1) - topline + 1
     end)
     row = row or 0 -- TODO probably not necessary. For now if row doesn't exist, I might want to throw an error
     local height = vim.api.nvim_win_get_height(win)
