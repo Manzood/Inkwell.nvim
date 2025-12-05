@@ -1,4 +1,4 @@
-DEBUG_MODE = false
+DEBUG_MODE = true
 
 local M = {}
 

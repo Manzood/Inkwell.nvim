@@ -76,12 +76,10 @@ function Create_OpenAI_Query(model, query_type)
 end
 
 local function sanitize_message(message)
-    -- parse message to find the first line that contains the word new_line
-    -- remove all lines before that line
     local lines = vim.split(message, "\n")
     local ret = message
     for i, line in ipairs(lines) do
-        if line:find("{") then -- works for multi-line as well since new_line is a substring of new_lines
+        if line:find("{") then
             ret = table.concat(lines, "\n", i, #lines)
             break
         end
@@ -240,7 +238,6 @@ function Query_via_cmd_line(url, model, query_type, api_key, auth_string)
                 Previous_Query_Data.valid_change = true
                 vim.schedule(function()
                     for _, patch in ipairs(suggested_changes.patches) do
-                        -- my_display.display_single_line_diff(cursor_line, patch.new_lines);
                         my_display.display_diff(patch);
                     end
                 end)
@@ -277,8 +274,6 @@ local function query_local_model(url, model, query)
 
             Previous_Query_Data.request_id = request_id
             Previous_Query_Data.response = result.stdout
-            -- mdebug("parsing done: " .. Parse_Response(result.stdout, PROVIDERS.OLLAMA))
-            -- local suggested_change = vim.json.decode(Parse_Response(result.stdout, PROVIDERS.OLLAMA))
             local ok, suggested_change = pcall(function()
                 return vim.json.decode(Parse_Response(result.stdout, PROVIDERS.OLLAMA))
             end)

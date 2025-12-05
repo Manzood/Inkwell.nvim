@@ -6,7 +6,7 @@ GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5
 OPENAI_URL = "https://api.openai.com/v1/responses"
 OLLAMA_GENERATE_URL = "http://localhost:11434/api/generate"
 OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
-QUERY_NUMBER_OF_LINES = 30
+QUERY_NUMBER_OF_LINES = 100
 MAX_LINES_TO_CHANGE = 10
 
 PROVIDERS = {
@@ -142,6 +142,7 @@ Requirements:
 - Prefer functional or semantic improvements (logic, correctness, completion) over whitespace or cosmetic formatting.
 - Keep indentation and naming consistent with the file.
 - The completion can represent a *partial change* in a larger logical improvement.  (This is acceptable if it helps guide the user.)
+- The code that you suggest *must* compile, unless you genuinely believe that the user is just experimenting and doesn't care about the code being valid.
 
 Do not include any other text or explanation besides the required output.
 

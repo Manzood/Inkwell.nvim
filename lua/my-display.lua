@@ -310,6 +310,7 @@ local function show_preview(bufnr, patch, opts, patch_green_positions)
     api.nvim_buf_set_option(preview_buf, "modifiable", true)
     api.nvim_buf_set_option(preview_buf, "filetype", api.nvim_buf_get_option(bufnr, "filetype"))
 
+    mdebug("lines: ", vim.inspect(lines))
     api.nvim_buf_set_lines(preview_buf, 0, -1, false, lines)
     api.nvim_buf_set_option(preview_buf, "modifiable", false)
 
@@ -670,6 +671,9 @@ M.display_diff = function(patch, opts)
     elseif #red_positions == 0 then
         for _, pos in ipairs(adjusted_green_positions) do
             local current_line = vim.api.nvim_buf_get_lines(0, pos[1] - 1, pos[1], false)[1]
+            if current_line == nil then
+                current_line = ""
+            end
             local start_index = addition_reference[pos[4]][1]
             local end_index = addition_reference[pos[4]][2]
             local insert_text = concatenated_patch:sub(start_index, end_index)
