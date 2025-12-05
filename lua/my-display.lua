@@ -310,8 +310,12 @@ local function show_preview(bufnr, patch, opts, patch_green_positions)
     api.nvim_buf_set_option(preview_buf, "modifiable", true)
     api.nvim_buf_set_option(preview_buf, "filetype", api.nvim_buf_get_option(bufnr, "filetype"))
 
-    mdebug("lines: ", vim.inspect(lines))
-    api.nvim_buf_set_lines(preview_buf, 0, -1, false, lines)
+    local escaped_lines = {}
+    for i, line in ipairs(lines) do
+        escaped_lines[i] = line:gsub("\n", "\\n")
+    end
+    mdebug("escaped_lines: ", vim.inspect(escaped_lines))
+    api.nvim_buf_set_lines(preview_buf, 0, -1, false, escaped_lines)
     api.nvim_buf_set_option(preview_buf, "modifiable", false)
 
     -- Calculate floating window dimensions

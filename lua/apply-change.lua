@@ -2,11 +2,11 @@ local display_diff = require("display-diff")
 local my_display = require("my-display")
 local mdebug = require("debug-util").debug
 
--- function to replace a specific line in the buffer with the new line content
-local function replace(line_nr, new_line_content) 
-    -- nvim_buf_set_lines takes a 0-indexed line number
+local function replace_line(line_nr, new_line_content) 
     mdebug("line_nr: ", line_nr, "new_line_content: ", new_line_content)
-    vim.api.nvim_buf_set_lines(0, line_nr - 1, line_nr, false, { new_line_content })
+    local escaped_content = new_line_content:gsub("\n", "\\n")
+    -- nvim_buf_set_lines takes a 0-indexed line number
+    vim.api.nvim_buf_set_lines(0, line_nr - 1, line_nr, false, { escaped_content })
 end
 
 function Apply_Suggested_Change()
@@ -26,7 +26,7 @@ function Apply_Suggested_Change()
                 mdebug("patch.line_start: ", patch.line_start, "patch.line_end: ", patch.line_end, "patch.new_lines: ", vim.inspect(patch.new_lines))
                 for i = patch.line_start, patch.line_end do
                     mdebug("Replacing line: ", i - deleted_line_count, "with: ", patch.new_lines[i - patch.line_start + 1])
-                    replace(i - deleted_line_count, patch.new_lines[i - patch.line_start + 1])
+                    replace_line(i - deleted_line_count, patch.new_lines[i - patch.line_start + 1])
                 end
             end
         end
